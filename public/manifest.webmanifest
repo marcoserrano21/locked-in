@@ -1,0 +1,30 @@
+{
+  "name": "Marco Locked-In",
+  "short_name": "Locked-In",
+  "description": "30-day locked-in schedule. Next block. Proof over vibes.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#070A10",
+  "theme_color": "#070A10",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

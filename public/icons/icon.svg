@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Marco Tracker">
+  <rect width="512" height="512" rx="96" fill="#0B0E14"/>
+  <rect x="72" y="72" width="368" height="368" rx="64" fill="#151922" stroke="#262B38" stroke-width="16"/>
+  <rect x="128" y="160" width="256" height="28" rx="14" fill="#3ECF8E"/>
+  <rect x="128" y="232" width="196" height="28" rx="14" fill="#3ECF8E" opacity="0.7"/>
+  <rect x="128" y="304" width="148" height="28" rx="14" fill="#F5A623"/>
+  <circle cx="368" cy="318" r="36" fill="#3ECF8E"/>
+  <path d="M352 318 l12 12 24-28" fill="none" stroke="#06231A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

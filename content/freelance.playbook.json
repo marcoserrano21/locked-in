@@ -1,0 +1,53 @@
+{
+  "positioning": "Product builder who turns messy operations into clear tools. Marketer by trade. Builder by instinct.",
+  "niche": "Orlando local service businesses (restaurants, gyms, contractors, salons)",
+  "offers": [
+    { "name": "Simple landing page", "price": "$300-600", "turnaround": "about 5 days" },
+    { "name": "Social / GBP retainer", "price": "$150-300/mo", "turnaround": "ongoing" }
+  ],
+  "proofPrimary": {
+    "title": "Demo Drive Hub",
+    "line": "Internal Tesla web app across 3 stores. 30+ users. Built after watching floor friction, not guessing it.",
+    "stack": "Next.js + Firebase",
+    "links": {
+      "portfolio": "https://marco-serrano.netlify.app/",
+      "linkedin": "https://linkedin.com/in/marco-serrano25"
+    }
+  },
+  "proofSecondary": [
+    "Intertek: reporting framework that cut manual reporting ~20%",
+    "Innovations Design Group: digitized 300+ docs, ~30% faster retrieval",
+    "FedEx Office: CRM-informed retention and sales lift"
+  ],
+  "warmSources": [
+    "Family friends with small businesses",
+    "Full Sail classmates",
+    "Former coworkers at Intertek, Innovations Design Group, FedEx Office"
+  ],
+  "weeklyFlow": [
+    { "id": "research", "label": "Research 5 Orlando targets", "detail": "Gym, salon, contractor, restaurant, local service. Note owner name + pain." },
+    { "id": "post", "label": "Post once: taking 1-2 projects", "detail": "Personal social. Lead with Demo Drive Hub proof, not a resume dump." },
+    { "id": "send", "label": "Send 5 warm DMs", "detail": "Trust transfer. Discounted first project, not free. Ask for a 15-min call." },
+    { "id": "followup", "label": "Follow up open threads (3+ days)", "detail": "Short bump. One proof line. One ask." }
+  ],
+  "ramp": [
+    { "id": "w1", "label": "Week 1", "items": ["Polish Demo Drive Hub case study", "Message 5 warm contacts"] },
+    { "id": "w2", "label": "Week 2", "items": ["Set up Contra / Upwork with niche framing", "Post in 2 Orlando FB groups"] },
+    { "id": "w3", "label": "Week 3", "items": ["Follow up everything open", "Refine pitch from real replies"] },
+    { "id": "w4", "label": "Week 4", "items": ["Book first client call", "Or start first paid project"] }
+  ],
+  "scripts": {
+    "warmDm": "Hey [Name] - I help local Orlando businesses get a clean landing page or simple social system without the agency runaround. I built Demo Drive Hub for Tesla stores (3 stores, 30+ users). Taking 1-2 discounted first projects for a testimonial. Open to a 15-min call this week?",
+    "contraHeadline": "I build simple landing pages for local service businesses in 5 days",
+    "socialPost": "Taking 1-2 small web / design projects for Orlando businesses. Proof: Demo Drive Hub (live across Tesla stores). Portfolio: marco-serrano.netlify.app. Prefer warm intros. DM me.",
+    "discoveryOpener": "What is the one customer action that is slower or messier than it should be? I will show how I fixed a similar ops gap at Tesla, then we decide if a small landing page or social cleanup is worth it."
+  },
+  "channels": [
+    "Warm DMs first",
+    "Personal social post",
+    "Contra + Orlando FB groups",
+    "Upwork only with niche headline",
+    "Skip cold DMing big companies for now"
+  ],
+  "moneyBlock": "Monday 1:00-3:00 PM is sacred. Do the weekly flow there."
+}

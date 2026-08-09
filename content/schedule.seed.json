@@ -1,0 +1,81 @@
+{
+  "dayTypes": [
+    "foundation",
+    "foundation",
+    "foundation",
+    "maintenance",
+    "maintenance",
+    "maintenance",
+    "maintenance"
+  ],
+  "dayNames": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  "days": {
+    "0": [
+      { "id": "s-wake", "time": "8:00 - 9:00 AM", "label": "Wake, no-phone 20 min, coffee, plan the day" },
+      { "id": "s-workout", "time": "9:00 - 10:30 AM", "label": "Workout" },
+      { "id": "s-brunch", "time": "11:00 AM - 1:00 PM", "label": "Brunch + downtime with girlfriend" },
+      { "id": "s-school", "time": "1:00 - 5:00 PM", "label": "School block: assignments + side project due tonight" },
+      { "id": "s-dog", "time": "5:00 - 6:00 PM", "label": "Dog walk, decompress" },
+      { "id": "s-submit", "time": "6:00 - 8:00 PM", "label": "Dinner, submit everything before 11:59pm" },
+      { "id": "s-free", "time": "8:00 - 9:30 PM", "label": "Free time, earned not guilty" },
+      { "id": "s-family", "time": "1-2x / month", "label": "Family video call home (~1hr)", "soft": true }
+    ],
+    "1": [
+      { "id": "m-wake", "time": "8:30 - 9:30 AM", "label": "Wake, self-care" },
+      { "id": "m-workout", "time": "9:30 - 11:00 AM", "label": "Workout" },
+      { "id": "m-laundry", "time": "11:00 AM - 1:00 PM", "label": "Start laundry, light apartment pickup" },
+      { "id": "m-money", "time": "1:00 - 3:00 PM", "label": "Freelance/money block: outreach, proposals, portfolio" },
+      { "id": "m-side", "time": "3:00 - 4:30 PM", "label": "Side project / school work" },
+      { "id": "m-dog", "time": "4:30 - 5:30 PM", "label": "Dog walk" },
+      { "id": "m-dinner", "time": "5:30 - 7:30 PM", "label": "Dinner alone" },
+      { "id": "m-wed", "time": "7:30 - 9:30 PM", "label": "Get ahead on Wednesday's assignment" },
+      { "id": "m-me", "time": "9:30 PM - 1:00 AM", "label": "Me time (soft: 30min side project)", "soft": true }
+    ],
+    "2": [
+      { "id": "t-wake", "time": "8:30 - 9:30 AM", "label": "Wake, self-care" },
+      { "id": "t-workout", "time": "9:30 - 11:00 AM", "label": "Workout" },
+      { "id": "t-clean", "time": "11:00 AM - 3:00 PM", "label": "Deep clean + laundry (~4hrs)" },
+      { "id": "t-catch", "time": "3:00 - 4:00 PM", "label": "Catch up on unfinished tasks" },
+      { "id": "t-dog", "time": "4:00 - 5:00 PM", "label": "Dog walk" },
+      { "id": "t-dinner", "time": "5:00 - 7:00 PM", "label": "Dinner / leftover prep" },
+      { "id": "t-finish", "time": "7:00 - 9:00 PM", "label": "Finish Wednesday's assignment, submitted" },
+      { "id": "t-me", "time": "9:00 PM - 1:00 AM", "label": "Me time (soft: 30min side project)", "soft": true }
+    ],
+    "3": [
+      { "id": "w3-wake", "time": "7:30 - 8:30 AM", "label": "Wake, self-care, real breakfast" },
+      { "id": "w3-commute", "time": "8:30 - 9:45 AM", "label": "Commute / buffer" },
+      { "id": "w3-tesla", "time": "10:00 AM - 7:30 PM", "label": "Tesla shift (laptop in the bag)" },
+      { "id": "w3-dog", "time": "7:30 - 8:30 PM", "label": "Dog walk, decompress" },
+      { "id": "w3-dinner", "time": "8:30 - 9:30 PM", "label": "Dinner" },
+      { "id": "w3-uber", "time": "9:30 - 11:30 PM", "label": "Uber block or side project (pick 2 nights/week)", "soft": true },
+      { "id": "w3-me", "time": "11:30 PM - 1:00 AM", "label": "Me time / wait (non-Uber nights)", "soft": true }
+    ],
+    "4": [
+      { "id": "w4-wake", "time": "7:30 - 8:30 AM", "label": "Wake, self-care, real breakfast" },
+      { "id": "w4-commute", "time": "8:30 - 9:45 AM", "label": "Commute / buffer" },
+      { "id": "w4-tesla", "time": "10:00 AM - 7:30 PM", "label": "Tesla shift (laptop in the bag)" },
+      { "id": "w4-dog", "time": "7:30 - 8:30 PM", "label": "Dog walk, decompress" },
+      { "id": "w4-dinner", "time": "8:30 - 9:30 PM", "label": "Dinner" },
+      { "id": "w4-uber", "time": "9:30 - 11:30 PM", "label": "Uber block or side project (pick 2 nights/week)", "soft": true },
+      { "id": "w4-me", "time": "11:30 PM - 1:00 AM", "label": "Me time / wait (non-Uber nights)", "soft": true }
+    ],
+    "5": [
+      { "id": "w5-wake", "time": "7:30 - 8:30 AM", "label": "Wake, self-care, real breakfast" },
+      { "id": "w5-commute", "time": "8:30 - 9:45 AM", "label": "Commute / buffer" },
+      { "id": "w5-tesla", "time": "10:00 AM - 7:30 PM", "label": "Tesla shift (laptop in the bag)" },
+      { "id": "w5-dog", "time": "7:30 - 8:30 PM", "label": "Dog walk, decompress" },
+      { "id": "w5-dinner", "time": "8:30 - 9:30 PM", "label": "Dinner" },
+      { "id": "w5-uber", "time": "9:30 - 11:30 PM", "label": "Uber block or side project (pick 2 nights/week)", "soft": true },
+      { "id": "w5-me", "time": "11:30 PM - 1:00 AM", "label": "Me time / wait (non-Uber nights)", "soft": true }
+    ],
+    "6": [
+      { "id": "w6-wake", "time": "7:30 - 8:30 AM", "label": "Wake, self-care, real breakfast" },
+      { "id": "w6-commute", "time": "8:30 - 9:45 AM", "label": "Commute / buffer" },
+      { "id": "w6-tesla", "time": "10:00 AM - 7:30 PM", "label": "Tesla shift (laptop in the bag)" },
+      { "id": "w6-dog", "time": "7:30 - 8:30 PM", "label": "Dog walk, decompress" },
+      { "id": "w6-dinner", "time": "8:30 - 9:30 PM", "label": "Dinner" },
+      { "id": "w6-uber", "time": "9:30 - 11:30 PM", "label": "Uber block or side project (pick 2 nights/week)", "soft": true },
+      { "id": "w6-me", "time": "11:30 PM - 1:00 AM", "label": "Me time / wait (non-Uber nights)", "soft": true }
+    ]
+  }
+}

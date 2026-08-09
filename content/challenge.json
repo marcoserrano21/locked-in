@@ -1,0 +1,14 @@
+{
+  "lengthDays": 30,
+  "uberCap": 500,
+  "uberSoftStop": 400,
+  "uberNightsPerWeek": 2,
+  "uberWindow": "9:30-11:30 PM",
+  "reviewQuestions": [
+    "Did Wednesday assignments get submitted the night before, not last minute?",
+    "Did the apartment stay clean without a Sunday scramble?",
+    "What did Uber actually net after energy cost, and how many miles did it cost?",
+    "Did freelance outreach happen every Monday, even when you did not feel like it?",
+    "Did the once/twice-a-month family call happen, or get skipped?"
+  ]
+}
