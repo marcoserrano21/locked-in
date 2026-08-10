@@ -1,10 +1,10 @@
 import { challengeDayNumber } from "../challenge.js";
 import { formatDisplayDate } from "../dates.js";
 import { BACKUP_STALE_DAYS, daysSinceBackup, isBackupStale } from "../backup.js";
-import { EQUIPMENT_OPTIONS, defaultFitnessSettings } from "../fitness.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFlash } from "./Install.js";
 import { renderDay30Editor } from "./Day30Editor.js";
+import { copy } from "../copy/voice.js";
 
 const THEMES = [
   { id: "dark", label: "dark" },
@@ -25,6 +25,8 @@ export function renderProfile(state, ui = {}, profiles = []) {
     ? formatDisplayDate(s.lastBackupAt.slice(0, 10))
     : "never";
   const lengthChoice = Number(s.challengeLength || length || 30);
+  const premium = Boolean(s.premiumUnlocked);
+  const isCustomLength = ![7, 14, 30, 90].includes(lengthChoice);
   const canDelete = profiles.length > 1;
 
   const profileRows = profiles
@@ -123,7 +125,29 @@ export function renderProfile(state, ui = {}, profiles = []) {
           </div>
           <p class="mt-2 text-xs" style="color:var(--mute)">Simple hides Proof and Miles until you unlock them or switch to Full.</p>
         </div>
+        <label class="flex min-h-tap flex-col gap-2 text-sm">
+          <span class="flex items-center justify-between gap-3">
+            <span id="reminders-label">Block reminders</span>
+            <input type="checkbox" data-action="toggle-block-reminders" ${s.blockReminders ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="reminders-label" aria-describedby="reminders-help" />
+          </span>
+          <span id="reminders-help" class="text-xs" style="color:var(--mute)">Local alerts ~5 min before the next core block, streak-at-risk at 9 PM, and Monday Flow at noon. Works best when the app is installed and recently open. Background delivery is limited on iOS until a native Capacitor wrap.</span>
+        </label>
+        <div>
+          <p class="mb-2 text-xs" style="color:var(--mute)">Premium preview</p>
+          <button type="button" class="btn w-full" data-action="${s.premiumUnlocked ? "disable-premium-preview" : "open-premium-unlock"}">
+            ${s.premiumUnlocked ? "Disable Premium preview" : "Enable Premium preview"}
+          </button>
+          <p class="mt-2 text-xs" style="color:var(--mute)">Client-side only for testing. Not real billing security.</p>
+        </div>
         <form class="space-y-2" data-action="profile-miles">
+          ${
+            state.preset !== "marco"
+              ? `<div>
+              <label class="mb-1 block text-xs" style="color:var(--mute)" for="money-label">Money label</label>
+              <input class="input" id="money-label" name="moneyLabel" value="${escapeHtml(s.moneyLabel || "Side income")}" placeholder="Side income" />
+            </div>`
+              : ""
+          }
           <div class="flex gap-2">
             <div class="flex-1">
               <label class="mb-1 block text-xs" style="color:var(--mute)" for="soft-stop">Soft stop</label>
@@ -134,22 +158,8 @@ export function renderProfile(state, ui = {}, profiles = []) {
               <input class="input" id="uber-cap" name="uberCap" type="number" min="1" value="${Number(s.uberCap || 500)}" />
             </div>
           </div>
-          <button class="btn w-full" type="submit">Save mile limits</button>
+          <button class="btn w-full" type="submit">Save ${state.preset === "marco" ? "mile" : "money"} limits</button>
         </form>
-      </section>
-
-      <section class="panel space-y-3">
-        <p class="eyebrow mb-0">Gym equipment</p>
-        <p class="text-xs" style="color:var(--mute)">Workout builder only suggests exercises you can do with what you have.</p>
-        <div class="equipment-grid">
-          ${(() => {
-            const available = state.fitnessSettings?.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
-            return EQUIPMENT_OPTIONS.map(
-              (eq) =>
-                `<button type="button" class="equipment-toggle ${available.includes(eq.id) ? "is-on" : ""}" data-action="toggle-equipment" data-id="${eq.id}" aria-pressed="${available.includes(eq.id)}">${escapeHtml(eq.label)}</button>`
-            ).join("");
-          })()}
-        </div>
       </section>
 
       <section class="panel space-y-3">
@@ -164,13 +174,27 @@ export function renderProfile(state, ui = {}, profiles = []) {
         <div>
           <p class="mb-2 text-xs" style="color:var(--mute)">Length</p>
           <div class="segment" role="group" aria-label="Challenge length">
-            ${[7, 14, 30, 90]
+            ${[7, 14, 30]
               .map(
                 (d) =>
                   `<button type="button" class="segment-btn ${lengthChoice === d ? "is-active accent" : ""}" data-action="set-challenge-length" data-days="${d}">${d}</button>`
               )
               .join("")}
+            ${
+              premium
+                ? `<button type="button" class="segment-btn ${lengthChoice === 90 ? "is-active accent" : ""}" data-action="set-challenge-length" data-days="90">90</button>`
+                : `<button type="button" class="segment-btn challenge-length-locked" data-action="open-premium-unlock" title="${escapeHtml(copy.challenge.locked90)}">90 · Premium</button>`
+            }
           </div>
+          ${
+            premium
+              ? `
+          <form class="challenge-custom-row" data-action="set-custom-challenge-length">
+            <input class="input" type="number" name="days" min="7" max="365" placeholder="${copy.challenge.customLabel}" value="${isCustomLength ? lengthChoice : ""}" />
+            <button type="submit" class="btn shrink-0 !text-xs">${copy.challenge.customSave}</button>
+          </form>`
+              : ""
+          }
         </div>
       </section>
 
@@ -193,8 +217,14 @@ export function renderProfile(state, ui = {}, profiles = []) {
       </section>
 
       <section class="panel space-y-2">
+        <p class="eyebrow">Testing</p>
+        <p class="text-sm" style="color:var(--mute)">Wipe local data and restart from Welcome so you can walk Simple vs Complete again.</p>
+        <button type="button" class="btn w-full" data-action="open-restart-onboarding">Restart app / Start from onboarding</button>
+      </section>
+
+      <section class="panel space-y-2">
         <p class="eyebrow" style="color:var(--danger)">Danger zone</p>
-        <p class="text-sm" style="color:var(--mute)">Wipes local data, reseeds schedule, and forces the recommit gate.</p>
+        <p class="text-sm" style="color:var(--mute)">Wipes local data, reseeds Marco schedule, and forces the recommit gate.</p>
         ${stale ? `<p class="text-xs" style="color:var(--maintain)">Export first. This reset cannot be undone on-device.</p>` : ""}
         <button type="button" class="btn btn-danger w-full" data-action="open-reset">Reset app</button>
       </section>
@@ -257,6 +287,28 @@ export function renderResetConfirmModal(state) {
           <div class="flex gap-2">
             <button type="button" class="btn flex-1" data-action="close-modal">Cancel</button>
             <button type="button" class="btn btn-danger flex-1" data-action="confirm-reset">Reset app</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export function renderRestartOnboardingModal(state) {
+  const stale = isBackupStale(state?.settings?.lastBackupAt);
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Restart from onboarding" data-stop>
+        <h2 class="display text-3xl">Start from onboarding?</h2>
+        <p class="mt-2 text-sm" style="color:var(--mute)">
+          Wipes data on this device and opens Welcome so you can walk Simple vs Complete like a new user.
+        </p>
+        ${stale ? `<p class="mt-2 text-sm banner banner-warn">No recent export. Export JSON first if you need your streak back.</p>` : ""}
+        <div class="mt-4 flex flex-col gap-2">
+          <button type="button" class="btn w-full" data-action="export-backup">Export JSON first</button>
+          <div class="flex gap-2">
+            <button type="button" class="btn flex-1" data-action="close-modal">Cancel</button>
+            <button type="button" class="btn btn-primary flex-1" data-action="confirm-restart-onboarding">Restart</button>
           </div>
         </div>
       </div>

@@ -10,9 +10,14 @@ import {
   makeExercise,
   makeSet,
   makeWorkoutSession,
+  migrateTrainWhyIds,
   sessionVolume,
+  suggestedNextLoad,
   touchRecentExercise,
 } from "./fitness.js";
+import { getHustlePack } from "./hustle-packs.js";
+import { BLOCK_PRESETS } from "./setup-presets.js";
+import { startChallenge, resolveChallengeLength } from "./challenge.js";
 
 const STORE_KEY = "marco-tracker-v4";
 const LEGACY_V3 = "marco-tracker-v3";
@@ -35,6 +40,7 @@ export let ui = {
   fitnessTab: "today",
   day30Open: null,
   day30Coach: false,
+  day30SectionOpen: null,
   toast: null,
   flash: null,
   selectedDay: new Date().getDay(),
@@ -48,6 +54,7 @@ export let ui = {
   theme: "dark",
   planMode: "template",
   selectedMuscleGroups: [],
+  workoutBuilderPreset: "custom",
   fitnessHistoryPage: 0,
   hustleLogPage: 0,
   milesPage: 0,
@@ -55,7 +62,24 @@ export let ui = {
   replaceExercise: null,
   fitnessSearch: "",
   fitnessMuscle: "all",
+  fitnessListFilter: "all",
   fitnessAddSession: null,
+  fitnessEquipmentOpen: false,
+  fitnessOpenExerciseId: null,
+  fitnessPrefsStep: 1,
+  fitnessPrefsMode: "build",
+  viewingWorkoutId: null,
+  welcomeStep: 1,
+  welcomeName: "",
+  welcomeFocus: "both",
+  welcomeAppMode: "simple",
+  restTimer: null,
+  todayView: "list",
+  setupWizardStep: 1,
+  setupBuildDays: [0, 1, 2],
+  setupModules: { fitness: true, money: false, hustle: false },
+  setupBlockPreset: "morning",
+  setupHustlePack: "blank",
 };
 
 function defaultProfileData() {
@@ -101,6 +125,7 @@ function defaultProfileData() {
       modulesUnlocked: { proof: true, miles: true },
       premiumUnlocked: false,
       hustlePlaybook: null,
+      blockReminders: false,
     },
   };
 }
@@ -172,7 +197,11 @@ function normalizeProfileData(parsed = {}) {
         : [...(CHALLENGE_META.reviewQuestions || [])],
     scheduleEdits: Array.isArray(parsed.scheduleEdits) ? parsed.scheduleEdits : [],
     fitnessLog: Array.isArray(parsed.fitnessLog) ? parsed.fitnessLog : [],
-    fitnessSettings: { ...defaultFitnessSettings(), ...(parsed.fitnessSettings || {}) },
+    fitnessSettings: {
+      ...defaultFitnessSettings(),
+      ...(parsed.fitnessSettings || {}),
+      trainWhy: migrateTrainWhyIds(parsed.fitnessSettings?.trainWhy),
+    },
     settings: { ...base.settings, ...(parsed.settings || {}) },
   };
   delete merged.version;
@@ -620,15 +649,15 @@ export function updateSettings(patch) {
 }
 
 export function setChallengeLength(days) {
-  const allowed = [7, 14, 30, 90];
-  const lengthDays = allowed.includes(Number(days)) ? Number(days) : 30;
+  const premium = Boolean(state?.settings?.premiumUnlocked);
+  const resolved = resolveChallengeLength(days, premium);
+  if (resolved == null) return false;
   patchState((s) => ({
     ...s,
-    settings: { ...s.settings, challengeLength: lengthDays },
-    challenge: s.challenge
-      ? { ...s.challenge, lengthDays }
-      : s.challenge,
+    settings: { ...s.settings, challengeLength: resolved },
+    challenge: s.challenge ? { ...s.challenge, lengthDays: resolved } : s.challenge,
   }));
+  return true;
 }
 
 export function setDay30Questions(questions) {
@@ -677,15 +706,16 @@ export function setAppMode(mode) {
       modulesUnlocked:
         appMode === "full"
           ? { proof: true, miles: true }
-          : s.settings?.modulesUnlocked || { proof: false, miles: false },
+          : { proof: false, miles: false },
     },
   }));
 }
 
 export function advanceTour() {
+  let done = false;
   patchState((s) => {
     const step = Number(s.settings?.tourStep || 0) + 1;
-    const done = step >= 3;
+    done = step >= 3;
     return {
       ...s,
       settings: {
@@ -695,6 +725,7 @@ export function advanceTour() {
       },
     };
   });
+  if (done) setUi({ modal: null });
 }
 
 export function unlockModule(name) {
@@ -720,38 +751,189 @@ export function setDay30Answer(questionId, answer) {
   }));
 }
 
-export function completeWelcome(displayName, focus = "both") {
+export function completeWelcome(displayName, focus = "both", appMode = "simple") {
   const name = String(displayName || "").trim() || "My track";
-  patchState((s) => ({
-    ...s,
-    settings: { ...s.settings, displayName: name },
-  }));
+  const mode = appMode === "full" ? "full" : "simple";
   if (appRoot?.profiles?.[appRoot.activeProfileId]) {
     appRoot.profiles[appRoot.activeProfileId].preset = "blank";
   }
-  needsWelcome = false;
-  const tab =
-    focus === "fitness" ? "freelance" : focus === "schedule" ? "today" : "today";
-  const hustleView = focus === "fitness" || focus === "both" ? "fitness" : "hustle";
+  const modulesFromFocus = {
+    fitness: focus === "fitness" || focus === "both",
+    money: mode === "full",
+    hustle: focus !== "fitness",
+  };
   patchState((s) => ({
     ...s,
     settings: {
       ...s.settings,
-      appMode: focus === "schedule" ? "simple" : focus === "fitness" ? "simple" : "simple",
-      tourStep: 0,
-      tourCompleted: false,
-      modulesUnlocked: { proof: false, miles: false },
+      displayName: name,
+      appMode: mode,
+      welcomeFocus: focus,
+      modulesUnlocked:
+        mode === "full" ? { proof: true, miles: true } : { proof: false, miles: false },
+    },
+  }));
+  setUi({
+    welcomeName: name,
+    welcomeFocus: focus,
+    welcomeAppMode: mode,
+    setupModules: modulesFromFocus,
+  });
+  persist();
+  notify();
+}
+
+export function finishOnboarding({
+  displayName,
+  focus = "both",
+  appMode = "simple",
+  buildDays = [0, 1, 2],
+  blockPreset = "morning",
+  challengeLength = 30,
+} = {}) {
+  const name = String(displayName || "").trim() || "My track";
+  const mode = appMode === "full" ? "full" : "simple";
+  needsWelcome = false;
+  if (appRoot?.profiles?.[appRoot.activeProfileId]) {
+    appRoot.profiles[appRoot.activeProfileId].preset = "blank";
+  }
+  const modules = {
+    fitness: focus === "fitness" || focus === "both",
+    money: mode === "full",
+    hustle: focus !== "fitness",
+  };
+  const lengthDays =
+    resolveChallengeLength(challengeLength, false) ??
+    resolveChallengeLength(30, false) ??
+    30;
+  const tab = focus === "fitness" ? "freelance" : "today";
+  const hustleView = focus === "fitness" || focus === "both" ? "fitness" : "hustle";
+
+  applySetupWizard({ buildDays, modules, blockPreset, hustlePack: "blank" });
+
+  patchState((s) => {
+    const withSettings = {
+      ...s,
+      settings: {
+        ...s.settings,
+        displayName: name,
+        appMode: mode,
+        welcomeFocus: focus,
+        challengeLength: lengthDays,
+        tourCompleted: true,
+        tourStep: 3,
+        onboardingCompleted: true,
+        modulesUnlocked:
+          mode === "full"
+            ? { proof: true, miles: true }
+            : { ...(s.settings?.modulesUnlocked || {}), proof: false, miles: false },
+      },
+    };
+    return startChallenge(withSettings);
+  });
+
+  setUi({
+    modal: null,
+    welcomeStep: 1,
+    tab,
+    hustleView,
+    fitnessTab: "today",
+    todayMode: "track",
+  });
+  persist();
+  notify();
+}
+
+export function applySetupWizard({
+  buildDays = [0, 1, 2],
+  modules = {},
+  blockPreset = "morning",
+  hustlePack = "blank",
+} = {}) {
+  const presetBlocks = BLOCK_PRESETS[blockPreset] || BLOCK_PRESETS.morning;
+  const schedule = {};
+  for (let d = 0; d < 7; d++) {
+    schedule[String(d)] = presetBlocks.map((b) => ({
+      ...b,
+      id: uid("blk"),
+      tags: b.tags ? b.tags.map((t) => ({ ...t })) : [],
+    }));
+  }
+  const pack = modules.hustle ? getHustlePack(hustlePack) : null;
+  patchState((s) => ({
+    ...s,
+    schedule,
+    settings: {
+      ...s.settings,
+      buildDays: [...buildDays],
+      moneyLabel: modules.money ? s.settings?.moneyLabel || "Side income" : s.settings?.moneyLabel,
+      moneyMode: s.settings?.moneyMode || "miles",
+      setupWizardCompleted: true,
+      modulesUnlocked: {
+        proof: Boolean(s.settings?.modulesUnlocked?.proof) || Boolean(modules.money),
+        miles: Boolean(modules.money) || s.settings?.appMode === "full",
+        hustle: Boolean(modules.hustle),
+        fitness: modules.fitness !== false,
+      },
+      hustlePlaybook: pack
+        ? {
+            niche: pack.niche,
+            positioning: pack.positioning,
+            moneyBlock: pack.moneyBlock,
+            weeklyFlow: (pack.weeklyFlow || []).map((f) => ({ ...f })),
+            ramp: (pack.ramp || []).map((w) => ({
+              ...w,
+              id: w.id || uid("ramp"),
+              items: [...(w.items || [])],
+            })),
+            scripts: { ...(pack.scripts || {}) },
+          }
+        : s.settings?.hustlePlaybook,
     },
   }));
   setUi({
     modal: null,
+    setupWizardStep: 1,
+    tab: "today",
+    todayMode: "track",
+    hustleView: modules.fitness ? "fitness" : modules.hustle ? "hustle" : "fitness",
+  });
+}
+
+export function restartFromOnboarding() {
+  try {
+    localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(LEGACY_V3);
+    localStorage.removeItem(LEGACY_V2);
+    localStorage.removeItem(LEGACY_V1);
+  } catch (error) {
+    console.warn("restart clear failed", error);
+  }
+  needsWelcome = true;
+  const profile = makeProfile("blank", "", blankProfileData(""));
+  profile.settings.displayName = "";
+  appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
+  syncActiveFromRoot();
+  setUi({
+    tab: "today",
+    todayMode: "track",
+    hustleView: "fitness",
+    hustleTab: "flow",
+    fitnessTab: "today",
+    selectedDay: new Date().getDay(),
+    selectedDate: todayKey(),
+    overrideDate: todayKey(),
+    shiftWeekOffset: 0,
+    modal: "welcome",
     welcomeStep: 1,
     welcomeName: "",
     welcomeFocus: "both",
-    tab,
-    hustleView,
-    fitnessTab: "today",
-    todayMode: focus === "schedule" ? "edit" : "track",
+    welcomeAppMode: "simple",
+    editingBlock: null,
+    editingEvent: null,
+    celebrate: null,
+    planMode: "template",
+    flash: null,
   });
   persist();
   notify();
@@ -795,13 +977,22 @@ export function startWorkout(date = todayKey()) {
   });
 }
 
-export function addExerciseToSession(sessionId, name, muscleGroup = "") {
+export function addExerciseToSession(sessionId, name, muscleGroup = "", planMeta = {}) {
   const trimmed = String(name || "").trim();
   if (!trimmed) return;
   const catalog = findExerciseCatalog(trimmed);
   patchState((s) => {
     const unitPref = s.fitnessSettings?.preferredUnit || "lb";
     const group = muscleGroup || catalog?.muscleGroup || "";
+    const hint = suggestedNextLoad(s.fitnessLog, trimmed, unitPref);
+    const reps = planMeta.reps != null ? Number(planMeta.reps) : hint.reps;
+    const seed = { ...hint, reps: Number.isFinite(reps) ? reps : hint.reps };
+    const seeded = makeExercise(trimmed, group, unitPref, seed, {
+      sets: planMeta.sets,
+      pairId: planMeta.pairId,
+      pairType: planMeta.pairType,
+      role: planMeta.role,
+    });
     return {
       ...s,
       fitnessSettings: {
@@ -811,8 +1002,44 @@ export function addExerciseToSession(sessionId, name, muscleGroup = "") {
       },
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => ({
         ...session,
-        exercises: [...(session.exercises || []), makeExercise(trimmed, group, unitPref)],
+        exercises: [...(session.exercises || []), seeded],
       })),
+    };
+  });
+}
+
+export function patchFitnessSettings(patch) {
+  patchState((s) => ({
+    ...s,
+    fitnessSettings: {
+      ...defaultFitnessSettings(),
+      ...s.fitnessSettings,
+      ...patch,
+    },
+  }));
+}
+
+export function toggleTrainWhy(id) {
+  const key = String(id || "").trim();
+  if (!key) return;
+  patchState((s) => {
+    const prev = Array.isArray(s.fitnessSettings?.trainWhy) ? [...s.fitnessSettings.trainWhy] : [];
+    const has = prev.includes(key);
+    let trainWhy;
+    if (has) {
+      trainWhy = prev.filter((x) => x !== key);
+    } else if (prev.length >= 3) {
+      trainWhy = [...prev.slice(1), key];
+    } else {
+      trainWhy = [...prev, key];
+    }
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        trainWhy,
+      },
     };
   });
 }
@@ -823,10 +1050,17 @@ export function addFitnessSet(sessionId, exerciseId) {
     return {
       ...s,
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
-        mapExercise(session, exerciseId, (ex) => ({
-          ...ex,
-          sets: [...(ex.sets || []), makeSet(unit)],
-        }))
+        mapExercise(session, exerciseId, (ex) => {
+          const last = (ex.sets || [])[(ex.sets || []).length - 1];
+          const hint = suggestedNextLoad(s.fitnessLog, ex.name, unit);
+          const seed = last
+            ? { weight: Number(last.weight) || 0, reps: Number(last.reps) || hint.reps || 8, unit: last.unit || unit }
+            : hint;
+          return {
+            ...ex,
+            sets: [...(ex.sets || []), makeSet(unit, seed)],
+          };
+        })
       ),
     };
   });
@@ -922,13 +1156,34 @@ export function setEquipmentAvailable(list) {
 
 export function toggleEquipment(id) {
   const key = String(id || "").trim();
-  if (!key) return;
+  if (!key) return 0;
+  let removed = 0;
   patchState((s) => {
     const current = s.fitnessSettings?.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
     const has = current.includes(key);
     const equipmentAvailable = has ? current.filter((x) => x !== key) : [...current, key];
+    const available = new Set(equipmentAvailable);
+    const date = todayKey();
+    const log = s.fitnessLog || [];
+    const session = log.find((w) => w.date === date && !w.completedAt);
+    let nextLog = log;
+    if (session?.exercises?.length) {
+      const kept = [];
+      for (const ex of session.exercises) {
+        const cat = findExerciseCatalog(ex.name);
+        const eq = cat?.equipment || [];
+        if (!eq.length || eq.some((e) => available.has(e))) kept.push(ex);
+        else removed += 1;
+      }
+      if (removed) {
+        nextLog = log.map((w) =>
+          w.id === session.id ? { ...w, exercises: kept } : w
+        );
+      }
+    }
     return {
       ...s,
+      fitnessLog: nextLog,
       fitnessSettings: {
         ...defaultFitnessSettings(),
         ...s.fitnessSettings,
@@ -936,6 +1191,7 @@ export function toggleEquipment(id) {
       },
     };
   });
+  return removed;
 }
 
 export function blockExercise(name) {
@@ -970,6 +1226,26 @@ export function unblockExercise(name) {
   }));
 }
 
+export function toggleFavoriteExercise(name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return;
+  patchState((s) => {
+    const prev = s.fitnessSettings?.favoriteExercises || [];
+    const has = prev.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+    const favoriteExercises = has
+      ? prev.filter((n) => n.toLowerCase() !== trimmed.toLowerCase())
+      : [...prev, trimmed];
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        favoriteExercises,
+      },
+    };
+  });
+}
+
 export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGroup = "") {
   const trimmed = String(name || "").trim();
   if (!trimmed || !sessionId || !exerciseId) return;
@@ -977,6 +1253,7 @@ export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGrou
   patchState((s) => {
     const unitPref = s.fitnessSettings?.preferredUnit || "lb";
     const group = muscleGroup || catalog?.muscleGroup || "";
+    const hint = suggestedNextLoad(s.fitnessLog, trimmed, unitPref);
     return {
       ...s,
       fitnessSettings: {
@@ -985,7 +1262,7 @@ export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGrou
         recentExercises: touchRecentExercise(s.fitnessSettings, trimmed),
       },
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
-        mapExercise(session, exerciseId, () => makeExercise(trimmed, group, unitPref))
+        mapExercise(session, exerciseId, () => makeExercise(trimmed, group, unitPref, hint))
       ),
     };
   });

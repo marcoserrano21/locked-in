@@ -1,0 +1,52 @@
+/** Marco voice: short, curious, proof-over-vibes. No em dashes. */
+
+export const copy = {
+  today: {
+    eyebrow: "Today",
+    headline: (name) => `Stay locked in, ${name}`,
+    editEyebrow: "Today · Edit",
+    editTitle: "Edit the track",
+    editSubtitle: (day, length) => `Day ${day}/${length}. Change structure here. Check blocks in Track.`,
+    softNote: "Soft targets don't count toward streak.",
+    nowSubtitle: "One block at a time. Core counts. Soft doesn't.",
+    sealedTitle: "All core blocks done.",
+    noBlocks: "No blocks for this day.",
+    emptyTrack: "Build your first blocks in Edit. One track. No clutter.",
+    quickTour: "Quick tour",
+  },
+  welcome: {
+    step1Title: "Lock in your track.",
+    step1Subtitle: "Your schedule and logs stay on this device. No account needed.",
+    step2Title: "What are you locking in?",
+    step2Subtitle: "Pick your starting lane. You can use everything later.",
+    step3Title: "Build days",
+    step3Subtitle: "Pick build days and a starter template. Edit blocks anytime.",
+    step4Title: "Simple or Complete?",
+    step4Subtitle: "Simple keeps Today, Fitness, and Profile. Complete unlocks Proof and Miles from day one.",
+    step5Title: "Lock in.",
+    step5Subtitle: "Pick your challenge length. Proof over vibes.",
+  },
+  fitness: {
+    prefsEyebrow: (step) => `Training prefs · ${step}/2`,
+    outcomeTitle: "What's the outcome?",
+    outcomeSubtitle: "Pick one. Shapes volume and intensity.",
+    whyTitle: "Why you train",
+    whySubtitle: "Pick up to 3. Shapes intensity and finishers.",
+    equipmentMatch: (n) => `${n} exercises match your gear`,
+  },
+  challenge: {
+    locked90: "90-day lock-in is Premium",
+    customLabel: "Custom days (7–365)",
+    customSave: "Set length",
+  },
+  coach: {
+    emptyWizard: "No week template yet. Finish setup or open Edit and build the track.",
+    streakRisk: "Core still open. Midnight doesn't care about your mood.",
+    mondayFlow: "Monday money block. Weekly Flow is still open.",
+    workoutBlock: "Workout block's still open. Log it while it's fresh.",
+    workoutLate: "Workout block still open and it's late. Log before midnight.",
+    milesSoft: (pct) => `Miles at ${pct}% of soft stop. Respect the bridge.`,
+    day30Early: (day, n) => `Day ${day}. ${n} Day 30 answers still open. Early beats surprise.`,
+    day30Late: (day) => `Day ${day}. Over half of Day 30 is unanswered. Finish strong.`,
+  },
+};

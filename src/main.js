@@ -45,6 +45,7 @@ import {
   unlockModule,
   needsWelcome,
   completeWelcome,
+  finishOnboarding,
   loadMarcoDemo,
   startWorkout,
   addExerciseToSession,
@@ -60,24 +61,44 @@ import {
   replaceExerciseInSession,
   setPremiumUnlocked,
   updateHustlePlaybook,
+  restartFromOnboarding,
+  toggleFavoriteExercise,
+  unblockExercise,
+  applySetupWizard,
+  patchFitnessSettings,
+  toggleTrainWhy,
 } from "./store.js";
-import { startChallenge } from "./challenge.js";
+import { startChallenge, challengeDayNumber, isChallengeUnlocked } from "./challenge.js";
 import { blocksFor, uid } from "./schedule.js";
-import { todayKey } from "./dates.js";
+import { todayKey, snapTimeInputValue } from "./dates.js";
 import { resolveBlocksForDate } from "./work.js";
-import { activeSessionForDate, defaultFitnessSettings } from "./fitness.js";
+import {
+  activeSessionForDate,
+  canCompleteWorkout,
+  defaultFitnessSettings,
+  PPL_PRESETS,
+} from "./fitness.js";
 import { generateWorkoutPlan } from "./fitness-plan.js";
 import { mergePlaybook } from "./hustle-playbook.js";
 import { completionForDate } from "./streaks.js";
 import { applyTheme, cycleTheme, getStoredTheme } from "./theme.js";
-import { renderNav } from "./ui/Nav.js";
-import { renderToday } from "./ui/Today.js";
+import { enableBlockReminders, scheduleNextBlockReminder } from "./reminders.js";
+import { hapticCheck, hapticSuccess } from "./haptics.js";
+import { renderNav, visibleTabs } from "./ui/Nav.js";
+import { renderToday, patchTodayTrack } from "./ui/Today.js";
 import { renderProof } from "./ui/Proof.js";
 import { renderMiles, renderUberEditorModal } from "./ui/Miles.js";
 import { renderFreelance, renderOutreachEditorModal } from "./ui/Freelance.js";
-import { renderAddExerciseModal, renderFitnessCelebrate } from "./ui/Fitness.js";
+import {
+  renderAddExerciseModal,
+  renderFitnessCelebrate,
+  renderWorkoutDetailModal,
+} from "./ui/Fitness.js";
 import { renderWorkoutBuilderModal } from "./ui/fitness/WorkoutBuilderModal.js";
+import { renderFitnessPrefsModal } from "./ui/fitness/FitnessPrefsModal.js";
 import { renderWelcomeModal } from "./ui/Welcome.js";
+import { renderTipsModal } from "./ui/Tips.js";
+import { renderSetupWizard } from "./ui/SetupWizard.js";
 import {
   renderBlockEditorModal,
   renderEventEditorModal,
@@ -89,6 +110,7 @@ import { shareProgress } from "./share.js";
 import {
   renderProfile,
   renderResetConfirmModal,
+  renderRestartOnboardingModal,
   renderProfileEditorModal,
   renderDeleteProfileModal,
 } from "./ui/Profile.js";
@@ -97,12 +119,17 @@ import { renderCelebrate } from "./ui/Celebrate.js";
 import { renderToast } from "./ui/Install.js";
 import { renderPremiumUnlockModal, PREMIUM_TEST_PASSWORD } from "./ui/PremiumUnlock.js";
 import { renderHustleEditorModal, makeFlowItem, makeRampWeek } from "./ui/HustleEditor.js";
+import { computeStreak } from "./streaks.js";
 
 const app = document.getElementById("app");
 let pendingPlanAction = null;
 let toastTimer = null;
+/** When true, next subscribe render tries Today region patch instead of full remount. */
+let preferTodayPatch = false;
 let deferredInstallPrompt = null;
 let canInstallPwa = false;
+let lastTab = null;
+let splashDismissed = false;
 
 function currentTheme() {
   return state?.settings?.theme || getStoredTheme();
@@ -138,13 +165,52 @@ function renderBootError(message) {
   });
 }
 
+function dismissSplash() {
+  if (splashDismissed) return;
+  splashDismissed = true;
+  const splash = document.getElementById("app-splash");
+  if (!splash) return;
+  splash.classList.add("is-leaving");
+  const remove = () => splash.remove();
+  splash.addEventListener("transitionend", remove, { once: true });
+  setTimeout(remove, 500);
+}
+
+function ensureTipsModal() {
+  // Tips open only via explicit user action (open-tips).
+}
+
 function render() {
   if (!state) {
     renderBootError("Saved profile data is missing or corrupt.");
     return;
   }
   try {
-  const needsCommit = !state.challenge?.startDate && ui.modal !== "welcome" && !needsWelcome;
+  const needsCommit =
+    !state.challenge?.startDate &&
+    ui.modal !== "welcome" &&
+    !needsWelcome &&
+    ui.modal !== "tips" &&
+    !state.settings?.onboardingCompleted;
+
+  if (
+    preferTodayPatch &&
+    !needsCommit &&
+    !ui.celebrate &&
+    !ui.modal &&
+    ui.tab === "today" &&
+    (ui.todayMode || "track") === "track"
+  ) {
+    preferTodayPatch = false;
+    if (patchTodayTrack(app, state, ui, { canInstall: canInstallPwa })) {
+      scheduleNextBlockReminder(state, ui.selectedDate || todayKey());
+      return;
+    }
+  }
+  preferTodayPatch = false;
+
+  const tabChanged = lastTab != null && lastTab !== ui.tab;
+  lastTab = ui.tab;
 
   let body = "";
   if (ui.tab === "proof") body = renderProof(state, ui);
@@ -163,9 +229,14 @@ function render() {
   else if (ui.modal === "profile-editor") modal = renderProfileEditorModal(ui, listProfiles());
   else if (ui.modal === "delete-profile") modal = renderDeleteProfileModal(ui);
   else if (ui.modal === "reset-confirm") modal = renderResetConfirmModal(state);
-  else if (ui.modal === "welcome") modal = renderWelcomeModal(ui);
+  else if (ui.modal === "restart-onboarding") modal = renderRestartOnboardingModal(state);
+  else if (ui.modal === "welcome") modal = renderWelcomeModal(ui, state);
+  else if (ui.modal === "tips") modal = renderTipsModal(state);
+  else if (ui.modal === "setup-wizard") modal = renderSetupWizard(state, ui);
   else if (ui.modal === "add-exercise") modal = renderAddExerciseModal(ui, state.fitnessSettings);
+  else if (ui.modal === "fitness-prefs") modal = renderFitnessPrefsModal(ui, state);
   else if (ui.modal === "workout-builder") modal = renderWorkoutBuilderModal(ui, state);
+  else if (ui.modal === "workout-detail") modal = renderWorkoutDetailModal(state, ui);
   else if (ui.modal === "premium-unlock") modal = renderPremiumUnlockModal(ui);
   else if (ui.modal === "hustle-editor") modal = renderHustleEditorModal(state, ui);
   else if (ui.modal === "shift-sheet") modal = renderShiftSheet(ui, state);
@@ -178,12 +249,17 @@ function render() {
   const toast = renderToast(ui.toast);
 
   app.innerHTML = `
+    <div class="screen-fade ${tabChanged ? "is-entering" : ""}" data-app-body>
     ${body}
+    </div>
     ${needsCommit ? "" : renderNav(ui.tab, state)}
     ${modal}
     ${celebrate}
     ${toast}
   `;
+  scheduleNextBlockReminder(state, ui.selectedDate || todayKey());
+  ensureTipsModal();
+  requestAnimationFrame(() => dismissSplash());
   } catch (error) {
     console.error("render failed", error);
     renderBootError(error?.message || "Render failed");
@@ -212,6 +288,7 @@ function saveBlocksContext(mode, day, date, blocks, note) {
 function maybeCelebrate(date) {
   const c = completionForDate(state, date);
   if (c.complete && !state.celebrations?.[date]) {
+    hapticSuccess();
     setUi({
       celebrate: {
         date,
@@ -247,6 +324,8 @@ function clearModalState() {
     fitnessAddSession: null,
     fitnessSearch: "",
     fitnessMuscle: "all",
+    fitnessListFilter: "all",
+    viewingWorkoutId: null,
     shiftSheetType: null,
     replaceExercise: null,
     openExerciseMenu: null,
@@ -310,7 +389,71 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "open-workout-builder") {
-    setUi({ modal: "workout-builder", selectedMuscleGroups: [] });
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    if (!settings.prefsCaptured) {
+      setUi({
+        modal: "fitness-prefs",
+        fitnessPrefsStep: 1,
+        fitnessPrefsMode: "build",
+        selectedMuscleGroups: [],
+        workoutBuilderPreset: "custom",
+      });
+      return;
+    }
+    setUi({ modal: "workout-builder", selectedMuscleGroups: [], workoutBuilderPreset: "custom" });
+    return;
+  }
+
+  if (action === "open-fitness-prefs") {
+    setUi({ modal: "fitness-prefs", fitnessPrefsStep: 1, fitnessPrefsMode: "edit" });
+    return;
+  }
+
+  if (action === "fitness-prefs-continue") {
+    setUi({ fitnessPrefsStep: 2 });
+    return;
+  }
+
+  if (action === "fitness-prefs-back") {
+    setUi({ fitnessPrefsStep: 1 });
+    return;
+  }
+
+  if (action === "fitness-prefs-save") {
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    const why = settings.trainWhy || [];
+    if (!why.length) {
+      showToast("Pick at least one why");
+      return;
+    }
+    patchFitnessSettings({ prefsCaptured: true });
+    if (ui.fitnessPrefsMode === "edit") {
+      setUi({ modal: null, fitnessPrefsStep: 1 });
+      showToast("Training prefs saved");
+      return;
+    }
+    setUi({
+      modal: "workout-builder",
+      fitnessPrefsStep: 1,
+      selectedMuscleGroups: [],
+      workoutBuilderPreset: "custom",
+    });
+    return;
+  }
+
+  if (action === "toggle-fitness-exercise") {
+    const id = t.dataset.exercise || "";
+    const current = ui.fitnessOpenExerciseId;
+    // null = default first incomplete; "" = all collapsed; id = that exercise open
+    const next = current === id ? "" : id;
+    setUi({ fitnessOpenExerciseId: next });
+    return;
+  }
+
+  if (action === "workout-builder-preset") {
+    const preset = t.dataset.preset || "custom";
+    const groups = preset === "custom" ? ui.selectedMuscleGroups || [] : [...(PPL_PRESETS[preset] || [])];
+    setUi({ workoutBuilderPreset: preset, selectedMuscleGroups: groups });
     return;
   }
 
@@ -318,7 +461,7 @@ app.addEventListener("click", (event) => {
     const group = t.dataset.group;
     const current = ui.selectedMuscleGroups || [];
     const next = current.includes(group) ? current.filter((g) => g !== group) : [...current, group];
-    setUi({ selectedMuscleGroups: next });
+    setUi({ selectedMuscleGroups: next, workoutBuilderPreset: "custom" });
     return;
   }
 
@@ -334,11 +477,22 @@ app.addEventListener("click", (event) => {
       equipment: settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable,
       log: state.fitnessLog || [],
       blocked: settings.blockedExercises || [],
+      experienceLevel: settings.experienceLevel || "beginner",
+      goal: settings.goal || "build_muscle",
+      trainWhy: settings.trainWhy || [],
     });
     startWorkout();
     const session = activeSessionForDate(state.fitnessLog);
     if (session?.id) {
-      plan.forEach((ex) => addExerciseToSession(session.id, ex.name, ex.muscleGroup));
+      plan.forEach((ex) =>
+        addExerciseToSession(session.id, ex.name, ex.muscleGroup, {
+          sets: ex.sets,
+          reps: ex.reps,
+          pairId: ex.pairId,
+          pairType: ex.pairType,
+          role: ex.role,
+        })
+      );
     }
     clearModalState();
     showToast(plan.length ? `Built ${plan.length} exercises` : "No matches for your equipment");
@@ -353,6 +507,7 @@ app.addEventListener("click", (event) => {
       fitnessAddSession: session?.id || "",
       fitnessSearch: "",
       fitnessMuscle: "all",
+      fitnessListFilter: "all",
       replaceExercise: null,
       selectedMuscleGroups: [],
     });
@@ -365,8 +520,40 @@ app.addEventListener("click", (event) => {
       fitnessAddSession: t.dataset.session,
       fitnessSearch: "",
       fitnessMuscle: "all",
+      fitnessListFilter: "all",
       replaceExercise: null,
     });
+    return;
+  }
+
+  if (action === "fitness-list-filter") {
+    setUi({ fitnessListFilter: t.dataset.filter || "all" });
+    return;
+  }
+
+  if (action === "toggle-favorite-exercise") {
+    toggleFavoriteExercise(t.dataset.name);
+    return;
+  }
+
+  if (action === "unblock-exercise") {
+    unblockExercise(t.dataset.name);
+    showToast("Exercise unblocked");
+    return;
+  }
+
+  if (action === "toggle-equipment-panel") {
+    setUi({ fitnessEquipmentOpen: !ui.fitnessEquipmentOpen });
+    return;
+  }
+
+  if (action === "fitness-equipment-more") {
+    setUi({ fitnessEquipmentMore: !ui.fitnessEquipmentMore });
+    return;
+  }
+
+  if (action === "open-workout-detail") {
+    setUi({ modal: "workout-detail", viewingWorkoutId: t.dataset.session });
     return;
   }
 
@@ -437,7 +624,8 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "toggle-equipment") {
-    toggleEquipment(t.dataset.id);
+    const removed = toggleEquipment(t.dataset.id);
+    if (removed > 0) showToast(`${removed} exercise${removed === 1 ? "" : "s"} removed — no matching equipment`);
     return;
   }
 
@@ -504,6 +692,20 @@ app.addEventListener("click", (event) => {
 
   if (action === "toggle-fitness-set") {
     toggleFitnessSetDone(t.dataset.session, t.dataset.exercise, t.dataset.set);
+    hapticCheck();
+    const seconds = Number(state.fitnessSettings?.restSeconds || 90);
+    setUi({ restTimer: { endsAt: Date.now() + seconds * 1000, seconds } });
+    return;
+  }
+
+  if (action === "start-rest-timer") {
+    const seconds = Number(t.dataset.seconds) || 90;
+    setUi({ restTimer: { endsAt: Date.now() + seconds * 1000, seconds } });
+    return;
+  }
+
+  if (action === "clear-rest-timer") {
+    setUi({ restTimer: null });
     return;
   }
 
@@ -519,8 +721,15 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "complete-workout") {
+    const session = (state.fitnessLog || []).find((w) => w.id === t.dataset.session);
+    const gate = canCompleteWorkout(session);
+    if (!gate.ok) {
+      showToast(gate.reason || "Fill weight and reps on every set");
+      return;
+    }
     const payload = completeWorkout(t.dataset.session);
     if (payload) {
+      hapticSuccess();
       setUi({
         celebrate: { type: "fitness", ...payload },
         fitnessTab: "today",
@@ -531,6 +740,7 @@ app.addEventListener("click", (event) => {
 
   if (action === "delete-workout") {
     deleteWorkout(t.dataset.session);
+    if (ui.modal === "workout-detail") clearModalState();
     showToast("Workout removed");
     return;
   }
@@ -547,7 +757,133 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "welcome-back") {
-    setUi({ welcomeStep: 1 });
+    const step = Number(t.dataset.step) || Math.max(1, (ui.welcomeStep || 1) - 1);
+    setUi({ welcomeStep: step });
+    return;
+  }
+
+  if (action === "welcome-back-mode") {
+    setUi({ welcomeStep: 4 });
+    return;
+  }
+
+  if (action === "welcome-next") {
+    setUi({ welcomeStep: Number(t.dataset.step) || (ui.welcomeStep || 1) + 1 });
+    return;
+  }
+
+  if (action === "welcome-toggle-build-day") {
+    const day = Number(t.dataset.day);
+    const current = ui.setupBuildDays || [0, 1, 2];
+    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort();
+    setUi({ setupBuildDays: next.length ? next : [day] });
+    return;
+  }
+
+  if (action === "welcome-block-preset") {
+    setUi({ setupBlockPreset: t.value || "morning" });
+    return;
+  }
+
+  if (action === "welcome-challenge-length") {
+    const days = Number(t.dataset.days);
+    if (days === 90 && !state.settings?.premiumUnlocked) {
+      setUi({ modal: "premium-unlock", premiumError: null });
+      showToast("90-day lock-in is Premium");
+      return;
+    }
+    if (!setChallengeLength(days)) {
+      showToast("That length needs Premium");
+      return;
+    }
+    setUi({ welcomeChallengeLength: days });
+    return;
+  }
+
+  if (action === "welcome-finish") {
+    finishOnboarding({
+      displayName: ui.welcomeName || state.settings?.displayName,
+      focus: ui.welcomeFocus || "both",
+      appMode: ui.welcomeAppMode || state.settings?.appMode || "simple",
+      buildDays: ui.setupBuildDays || [0, 1, 2],
+      blockPreset: ui.setupBlockPreset || "morning",
+      challengeLength: ui.welcomeChallengeLength || state.settings?.challengeLength || 30,
+    });
+    showToast(`Welcome, ${String(ui.welcomeName || "friend").split(" ")[0]}`);
+    return;
+  }
+
+  if (action === "open-tips") {
+    setUi({ modal: "tips" });
+    return;
+  }
+
+  if (action === "rebuild-workout") {
+    const sessionId = t.dataset.session;
+    if (!sessionId) return;
+    if (!window.confirm("Replace today's workout? Current exercises will be cleared.")) return;
+    deleteWorkout(sessionId);
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    setUi({
+      fitnessOpenExerciseId: null,
+      modal: settings.prefsCaptured ? "workout-builder" : "fitness-prefs",
+      fitnessPrefsStep: 1,
+      fitnessPrefsMode: "build",
+      selectedMuscleGroups: [],
+      workoutBuilderPreset: "custom",
+    });
+    showToast("Pick muscles for a fresh session");
+    return;
+  }
+
+  if (action === "set-fitness-goal-radio") {
+    patchFitnessSettings({ goal: t.dataset.goal || t.value || "build_muscle" });
+    return;
+  }
+
+  if (action === "open-restart-onboarding") {
+    setUi({ modal: "restart-onboarding" });
+    return;
+  }
+
+  if (action === "confirm-restart-onboarding") {
+    restartFromOnboarding();
+    showToast("Welcome back to square one");
+    return;
+  }
+
+  if (action === "toggle-block-reminders") {
+    const enabled = Boolean(t.checked);
+    if (enabled) {
+      enableBlockReminders().then((result) => {
+        if (!result.ok) {
+          updateSettings({ blockReminders: false });
+          showToast(result.reason === "unsupported" ? "Notifications not supported here" : "Permission needed for reminders");
+          return;
+        }
+        updateSettings({ blockReminders: true });
+        scheduleNextBlockReminder(state, ui.selectedDate || todayKey());
+        showToast("Block reminders on");
+      });
+      return;
+    }
+    updateSettings({ blockReminders: false });
+    showToast("Block reminders off");
+    return;
+  }
+
+  if (action === "disable-premium-preview") {
+    setPremiumUnlocked(false);
+    showToast("Premium preview off");
+    return;
+  }
+
+  if (action === "toggle-day30-section") {
+    const dayNum = state.challenge ? challengeDayNumber(state.challenge) : 0;
+    const unlocked = isChallengeUnlocked(state.challenge);
+    const currentlyOpen =
+      ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || dayNum >= 21;
+    setUi({ day30SectionOpen: !currentlyOpen });
     return;
   }
 
@@ -637,7 +973,26 @@ app.addEventListener("click", (event) => {
 
   if (action === "set-app-mode") {
     setAppMode(t.dataset.mode);
+    const tabs = visibleTabs(state);
+    if (!tabs.some((tab) => tab.id === ui.tab)) {
+      setUi({ tab: "today" });
+    }
     showToast(t.dataset.mode === "full" ? "Full app unlocked" : "Simple mode on");
+    return;
+  }
+
+  if (action === "set-fitness-level") {
+    patchFitnessSettings({ experienceLevel: t.dataset.level || "beginner" });
+    return;
+  }
+
+  if (action === "set-fitness-goal") {
+    patchFitnessSettings({ goal: t.dataset.goal || "build_muscle" });
+    return;
+  }
+
+  if (action === "toggle-train-why") {
+    toggleTrainWhy(t.dataset.why);
     return;
   }
 
@@ -763,8 +1118,18 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "set-challenge-length") {
-    setChallengeLength(t.dataset.days);
-    showToast(`Challenge length ${t.dataset.days} days`);
+    const days = Number(t.dataset.days);
+    if (days === 90 && !state.settings?.premiumUnlocked) {
+      setUi({ modal: "premium-unlock", premiumError: null });
+      showToast("90-day lock-in is Premium");
+      return;
+    }
+    const ok = setChallengeLength(days);
+    if (!ok) {
+      showToast("That length needs Premium");
+      return;
+    }
+    showToast(`Challenge length ${days} days`);
     return;
   }
 
@@ -801,12 +1166,74 @@ app.addEventListener("click", (event) => {
     const id = t.dataset.id;
     if (!id) return;
     const wasDone = Boolean(state.completions?.[date]?.[id]);
+    preferTodayPatch = true;
     toggleBlock(date, id);
+    if (!wasDone) hapticCheck();
     if (!wasDone && !state.settings?.modulesUnlocked?.proof) {
       const block = resolveBlocksForDate(state, date).find((b) => b.id === id);
       if (block && !block.soft) unlockModule("proof");
     }
     maybeCelebrate(date);
+    return;
+  }
+
+  if (action === "dismiss-backup-nudge") {
+    updateSettings({ backupNudgeDismissed: true });
+    preferTodayPatch = true;
+    return;
+  }
+
+  if (action === "today-view") {
+    const view = t.dataset.view === "timeline" ? "timeline" : "list";
+    updateSettings({ todayView: view });
+    setUi({ todayView: view });
+    return;
+  }
+
+  if (action === "setup-toggle-build-day") {
+    const day = Number(t.dataset.day);
+    const current = Array.isArray(ui.setupBuildDays) ? [...ui.setupBuildDays] : [0, 1, 2];
+    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort();
+    setUi({ setupBuildDays: next });
+    return;
+  }
+
+  if (action === "setup-toggle-module") {
+    const mod = t.dataset.module;
+    const modules = { ...(ui.setupModules || {}) };
+    modules[mod] = Boolean(t.checked);
+    setUi({ setupModules: modules });
+    return;
+  }
+
+  if (action === "setup-block-preset") {
+    setUi({ setupBlockPreset: t.value || t.dataset.preset || "morning" });
+    return;
+  }
+
+  if (action === "setup-hustle-pack") {
+    setUi({ setupHustlePack: t.dataset.pack || "blank" });
+    return;
+  }
+
+  if (action === "setup-wizard-next") {
+    setUi({ setupWizardStep: Math.min(4, Number(ui.setupWizardStep || 1) + 1) });
+    return;
+  }
+
+  if (action === "setup-wizard-back") {
+    setUi({ setupWizardStep: Math.max(1, Number(ui.setupWizardStep || 1) - 1) });
+    return;
+  }
+
+  if (action === "setup-wizard-finish") {
+    applySetupWizard({
+      buildDays: ui.setupBuildDays || [0, 1, 2],
+      modules: ui.setupModules || { fitness: true, money: false, hustle: false },
+      blockPreset: ui.setupBlockPreset || "morning",
+      hustlePack: ui.setupHustlePack || "blank",
+    });
+    showToast("Track ready. Lock in when you're set.");
     return;
   }
 
@@ -1003,6 +1430,7 @@ app.addEventListener("click", (event) => {
 
   if (action === "export-backup") {
     downloadExport();
+    hapticSuccess();
     return;
   }
 
@@ -1037,6 +1465,17 @@ app.addEventListener("change", async (event) => {
   }
   if (input?.dataset?.action === "toggle-catchup") {
     updateSettings({ yesterdayCatchUp: Boolean(input.checked) });
+    return;
+  }
+  if (input?.dataset?.action === "setup-toggle-module") {
+    const mod = input.dataset.module;
+    const modules = { ...(ui.setupModules || {}) };
+    modules[mod] = Boolean(input.checked);
+    setUi({ setupModules: modules });
+    return;
+  }
+  if (input?.dataset?.action === "setup-block-preset") {
+    setUi({ setupBlockPreset: input.value || "morning" });
     return;
   }
   if (input?.dataset?.action !== "import-backup") return;
@@ -1182,11 +1621,13 @@ app.addEventListener("submit", (event) => {
   if (form.dataset.action === "profile-miles") {
     const soft = Number(form.uberSoftStop.value);
     const cap = Number(form.uberCap.value);
+    const moneyLabel = form.moneyLabel?.value?.trim();
     updateSettings({
       uberSoftStop: Number.isFinite(soft) && soft > 0 ? soft : 400,
       uberCap: Number.isFinite(cap) && cap > 0 ? cap : 500,
+      ...(moneyLabel ? { moneyLabel } : {}),
     });
-    showToast("Mile limits saved");
+    showToast(state.preset === "marco" ? "Mile limits saved" : "Money limits saved");
     return;
   }
 
@@ -1234,6 +1675,8 @@ app.addEventListener("submit", (event) => {
     const date = form.date.value;
     const mode = form.mode.value || "template";
     const index = Number(form.index.value);
+    const rawTime = form.time?.value || "";
+    const wasSnapped = rawTime && snapTimeInputValue(rawTime) !== rawTime;
     const draft = createBlockFromForm(form);
     const blocks = getBlocksContext(mode, day, date);
     if (index < 0) {
@@ -1244,7 +1687,25 @@ app.addEventListener("submit", (event) => {
       blocks[index] = { ...prev, ...draft, id: prev.id || uid("custom") };
       saveBlocksContext(mode, day, date, blocks, `Edited block (${mode})`);
     }
+    if (wasSnapped) showToast("Time snapped to 15-minute increment");
     clearModalState();
+    return;
+  }
+
+  if (form.dataset.action === "set-custom-challenge-length" || form.dataset.action === "welcome-custom-challenge") {
+    if (!state.settings?.premiumUnlocked) {
+      setUi({ modal: "premium-unlock", premiumError: null });
+      return;
+    }
+    const days = Number(form.days?.value);
+    if (!setChallengeLength(days)) {
+      showToast("Use 7 to 365 days");
+      return;
+    }
+    if (form.dataset.action === "welcome-custom-challenge") {
+      setUi({ welcomeChallengeLength: days });
+    }
+    showToast(`Challenge length ${days} days`);
     return;
   }
 
@@ -1258,8 +1719,37 @@ app.addEventListener("submit", (event) => {
   if (form.dataset.action === "welcome-focus") {
     const name = form.displayName.value.trim();
     const focus = form.focus.value || "both";
-    completeWelcome(name, focus);
-    showToast(`Welcome, ${name.split(" ")[0]}`);
+    const modulesFromFocus = {
+      fitness: focus === "fitness" || focus === "both",
+      money: false,
+      hustle: focus !== "fitness",
+    };
+    setUi({
+      welcomeStep: 3,
+      welcomeName: name,
+      welcomeFocus: focus,
+      setupModules: modulesFromFocus,
+      modal: "welcome",
+    });
+    return;
+  }
+
+  if (form.dataset.action === "welcome-mode") {
+    const name = form.displayName.value.trim();
+    const focus = form.focus.value || "both";
+    const appMode = form.appMode.value === "full" ? "full" : "simple";
+    completeWelcome(name, focus, appMode);
+    setUi({
+      welcomeStep: 5,
+      welcomeName: name,
+      welcomeFocus: focus,
+      welcomeAppMode: appMode,
+      setupModules: {
+        ...ui.setupModules,
+        money: appMode === "full",
+      },
+      modal: "welcome",
+    });
     return;
   }
 
@@ -1360,6 +1850,55 @@ setUi({
 });
 subscribe(render);
 render();
+
+/** Tick rest timer UI once per second while active. */
+setInterval(() => {
+  const timer = ui.restTimer;
+  if (!timer?.endsAt) return;
+  if (Date.now() >= timer.endsAt) {
+    setUi({ restTimer: null });
+    showToast("Rest done. Next set.");
+    return;
+  }
+  if (ui.tab === "freelance" && ui.hustleView === "fitness") {
+    render();
+  }
+}, 1000);
+
+/** Sunday weekly share nudge when streak ≥ 7. */
+(function maybeWeeklySharePrompt() {
+  if (!state) return;
+  if (new Date().getDay() !== 0) return;
+  if (state.settings?.weeklySharePromptedAt === todayKey()) return;
+  const streak = computeStreak(state);
+  if (streak < 7) return;
+  updateSettings({ weeklySharePromptedAt: todayKey() });
+  setTimeout(() => {
+    showToast(`Streak ${streak}. Share the week?`);
+  }, 1200);
+})();
+
+(function applyLaunchHash() {
+  const hash = (location.hash || "").replace(/^#/, "");
+  if (!hash || needsWelcome) return;
+  if (hash === "fitness") {
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    setUi({
+      tab: "freelance",
+      hustleView: "fitness",
+      fitnessTab: "today",
+      modal: settings.prefsCaptured ? "workout-builder" : "fitness-prefs",
+      fitnessPrefsStep: 1,
+      fitnessPrefsMode: "build",
+      selectedMuscleGroups: [],
+      workoutBuilderPreset: "custom",
+    });
+  } else if (hash === "today") {
+    setUi({ tab: "today", todayMode: "track" });
+  } else if (hash === "share") {
+    setUi({ tab: "today", todayMode: "track" });
+  }
+})();
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();

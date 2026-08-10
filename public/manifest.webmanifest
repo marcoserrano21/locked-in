@@ -26,5 +26,25 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today",
+      "short_name": "Today",
+      "description": "Open today's track",
+      "url": "./index.html#today"
+    },
+    {
+      "name": "Build workout",
+      "short_name": "Workout",
+      "description": "Open Fitness and build a workout",
+      "url": "./index.html#fitness"
+    },
+    {
+      "name": "Share progress",
+      "short_name": "Share",
+      "description": "Jump in ready to share today's progress",
+      "url": "./index.html#share"
+    }
   ]
 }

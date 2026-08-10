@@ -1,4 +1,4 @@
-const CACHE = "marco-locked-in-v7";
+const CACHE = "marco-locked-in-v9";
 
 const PRECACHE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon.svg"];
 
@@ -59,6 +59,30 @@ self.addEventListener("fetch", (event) => {
         if (cached) return cached;
         return Response.error();
       }
+    })()
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification?.data?.url || "./index.html#today";
+  event.waitUntil(
+    (async () => {
+      const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of all) {
+        if ("focus" in client) {
+          await client.focus();
+          if ("navigate" in client) {
+            try {
+              await client.navigate(target);
+            } catch {
+              /* ignore */
+            }
+          }
+          return;
+        }
+      }
+      if (clients.openWindow) await clients.openWindow(target);
     })()
   );
 });

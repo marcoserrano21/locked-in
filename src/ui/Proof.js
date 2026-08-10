@@ -7,7 +7,15 @@ import {
   longestStreak,
   weekSplit,
 } from "../streaks.js";
-import { escapeHtml, pctLabel } from "./dom.js";
+import {
+  completedSessions,
+  formatVolume,
+  sessionVolume,
+  sessionsThisWeek,
+  workoutStreak,
+  defaultFitnessSettings,
+} from "../fitness.js";
+import { escapeHtml, icon, pctLabel } from "./dom.js";
 
 const STATUSES = [
   { id: "yes", label: "Yes" },
@@ -59,6 +67,31 @@ function summarizeAnswers(answers, total) {
   return { answered, onTrack, atRisk, unanswered: total - answered };
 }
 
+function weekFitnessVolume(log = [], unit = "lb") {
+  return sessionsThisWeek(log).reduce((sum, s) => sum + sessionVolume(s, unit), 0);
+}
+
+function proofInsights(state, log, weekCount) {
+  const lines = [];
+  if (weekCount === 0) lines.push("0 workouts this week — schedule one session.");
+  else if (weekCount === 1) lines.push("One session logged. A second locks the week.");
+  else lines.push(`${weekCount} workouts this week. Momentum is real.`);
+
+  const coreToday = dayCompletion(state, 0);
+  if (coreToday.coreCount > 0 && coreToday.doneCore / coreToday.coreCount < 0.5) {
+    lines.push("Core completion lagging today — close the open blocks.");
+  } else if (computeStreak(state) === 0) {
+    lines.push("Day streak reset. Protect tomorrow's first block.");
+  }
+
+  const last = completedSessions(log).sort((a, b) => (b.date > a.date ? 1 : -1))[0];
+  if (last && workoutStreak(log) >= 3) {
+    lines.push(`Workout streak ${workoutStreak(log)}. Keep the chain.`);
+  }
+
+  return lines.slice(0, 2);
+}
+
 export function renderProof(state, ui) {
   const streak = computeStreak(state);
   const longest = longestStreak(state);
@@ -75,6 +108,16 @@ export function renderProof(state, ui) {
   const showCoach = Boolean(ui.day30Coach);
   const summary = summarizeAnswers(answers, questions.length);
   const earlyNudge = dayNum >= 21 && !unlocked;
+  const sectionOpen =
+    ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || dayNum >= 21;
+
+  const log = state.fitnessLog || [];
+  const settings = { ...defaultFitnessSettings(), ...(state.fitnessSettings || {}) };
+  const unit = settings.preferredUnit || "lb";
+  const fitStreak = workoutStreak(log);
+  const weekCount = sessionsThisWeek(log).length;
+  const weekVol = weekFitnessVolume(log, unit);
+  const insights = proofInsights(state, log, weekCount);
 
   const cells = [];
   for (let i = 29; i >= 0; i--) {
@@ -156,44 +199,58 @@ export function renderProof(state, ui) {
         <p class="serif-accent mt-2 text-xl" style="color:var(--mute)">Momentum you can audit.</p>
       </header>
 
-      <section class="panel grid grid-cols-2 gap-4">
-        <div>
-          <p class="text-xs" style="color:var(--mute)">current streak</p>
-          <p class="display text-5xl" style="color:var(--build)">${streak}</p>
-        </div>
-        <div>
-          <p class="text-xs" style="color:var(--mute)">longest</p>
-          <p class="display text-5xl">${longest}</p>
-        </div>
-      </section>
+      <div class="proof-bento" aria-label="Proof metrics">
+        <section class="proof-tile">
+          <p class="proof-tile-label">Current streak</p>
+          <p class="proof-tile-value" style="color:var(--build)">${streak}</p>
+          <p class="mt-2 text-xs" style="color:var(--mute)">Longest ${longest}</p>
+        </section>
 
-      <section class="panel flex flex-col gap-2">
-        <p class="eyebrow mb-0">Share proof</p>
-        <button type="button" class="btn btn-primary w-full" data-action="share-progress" data-scope="week">Share this week</button>
-        <button type="button" class="btn w-full" data-action="share-progress" data-scope="month">Share last 30 days</button>
-      </section>
+        <section class="proof-tile">
+          <p class="proof-tile-label">Fitness pulse</p>
+          <p class="proof-tile-value">${fitStreak}</p>
+          <p class="mt-2 text-xs" style="color:var(--mute)">${weekCount} this week · ${formatVolume(weekVol)} vol</p>
+        </section>
 
-      <section class="panel">
-        <p class="eyebrow mb-3">Last 30 days</p>
-        <div class="grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${cells.join("")}</div>
-      </section>
+        <section class="proof-tile proof-tile-wide">
+          <p class="proof-tile-label">This week split</p>
+          <div class="mt-3 space-y-3">
+            <div>
+              <div class="mb-1 flex justify-between text-sm"><span>Build</span><span style="color:var(--build)">${pctLabel(split.buildPct)}</span></div>
+              <div class="day-rail"><div class="day-rail-fill" style="width:${Math.round(split.buildPct * 100)}%"></div></div>
+            </div>
+            <div>
+              <div class="mb-1 flex justify-between text-sm"><span>Maintain</span><span style="color:var(--maintain)">${pctLabel(split.maintainPct)}</span></div>
+              <div class="day-rail"><div class="day-rail-fill maintain" style="width:${Math.round(split.maintainPct * 100)}%"></div></div>
+            </div>
+          </div>
+        </section>
 
-      <section class="panel">
-        <p class="eyebrow mb-3">Last 14 days</p>
-        <div class="flex h-12 items-end gap-1" aria-hidden="true">${spark.join("")}</div>
-      </section>
+        <section class="proof-tile proof-tile-wide">
+          <p class="proof-tile-label">Last 30 days</p>
+          <div class="mt-3 grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${cells.join("")}</div>
+        </section>
 
-      <section class="panel space-y-3">
-        <p class="eyebrow">This week split</p>
-        <div>
-          <div class="mb-1 flex justify-between text-sm"><span>Build</span><span style="color:var(--build)">${pctLabel(split.buildPct)}</span></div>
-          <div class="day-rail"><div class="day-rail-fill" style="width:${Math.round(split.buildPct * 100)}%"></div></div>
-        </div>
-        <div>
-          <div class="mb-1 flex justify-between text-sm"><span>Maintain</span><span style="color:var(--maintain)">${pctLabel(split.maintainPct)}</span></div>
-          <div class="day-rail"><div class="day-rail-fill maintain" style="width:${Math.round(split.maintainPct * 100)}%"></div></div>
-        </div>
-      </section>
+        <section class="proof-tile">
+          <p class="proof-tile-label">Last 14 days</p>
+          <div class="mt-3 flex h-12 items-end gap-1" aria-hidden="true">${spark.join("")}</div>
+        </section>
+
+        <section class="proof-tile">
+          <p class="proof-tile-label">Insight</p>
+          <ul class="proof-insight-list">
+            ${insights.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+          </ul>
+        </section>
+
+        <section class="proof-tile proof-tile-wide">
+          <p class="proof-tile-label mb-3">Share proof</p>
+          <div class="flex flex-col gap-2">
+            <button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="week">Share this week</button>
+            <button type="button" class="btn w-full !min-h-11" data-action="share-progress" data-scope="month">Share last 30 days</button>
+          </div>
+        </section>
+      </div>
 
       ${
         earlyNudge
@@ -206,14 +263,18 @@ export function renderProof(state, ui) {
       }
 
       <section class="panel" id="day30-review">
-        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p class="eyebrow mb-0">Day 30 review</p>
-          <div class="flex flex-wrap gap-1">
-            <span class="chip">answered ${summary.answered}/${questions.length}</span>
-            <span class="chip">${unlocked ? "unlocked" : `day ${dayNum}/30`}</span>
+        <button type="button" class="review-head w-full !px-0" data-action="toggle-day30-section" aria-expanded="${sectionOpen}">
+          <div class="min-w-0 text-left">
+            <p class="eyebrow mb-0">Day 30 review</p>
+            <p class="mt-1 text-xs" style="color:var(--mute)">answered ${summary.answered}/${questions.length} · ${unlocked ? "unlocked" : `day ${dayNum}/30`}</p>
           </div>
-        </div>
-        <div class="mb-3 flex flex-wrap gap-2 text-xs" style="color:var(--mute)">
+          <span class="chevron-rot ${sectionOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
+        </button>
+        <div class="day30-body ${sectionOpen ? "is-open" : ""}">
+        ${
+          sectionOpen
+            ? `
+        <div class="mt-3 mb-3 flex flex-wrap gap-2 text-xs" style="color:var(--mute)">
           <span>On track: <strong style="color:var(--build)">${summary.onTrack}</strong></span>
           <span>At risk: <strong style="color:var(--maintain)">${summary.atRisk}</strong></span>
           <span>Plan edits: ${edits}</span>
@@ -233,7 +294,10 @@ export function renderProof(state, ui) {
                 }
               </div>`
             : ""
+        }`
+            : ""
         }
+        </div>
       </section>
     </section>
   `;

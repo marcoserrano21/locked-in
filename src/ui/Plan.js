@@ -1,5 +1,5 @@
 import { DAY_NAMES, dayType, blocksFor, uid } from "../schedule.js";
-import { todayKey, weekDates, formatDisplayDate } from "../dates.js";
+import { todayKey, weekDates, formatDisplayDate, formatTimeForInput, snapTimeInputToDisplay } from "../dates.js";
 import { resolveBlocksForDate } from "../work.js";
 import { escapeHtml, icon, renderMetaRow } from "./dom.js";
 import { normalizeTags, parseTagsFromForm, tagsToFormValue, TAG_TONES, PRIORITY_LEVELS } from "../tags.js";
@@ -160,6 +160,7 @@ export function renderBlockEditorModal(ui) {
   };
   const isNew = Number(draft.index) < 0;
   const tags = Array.isArray(draft.tags) ? tagsToFormValue(draft.tags) : draft.tags || "";
+  const timeValue = formatTimeForInput(draft.time || "");
 
   return `
     <div class="modal-backdrop" data-action="close-modal">
@@ -176,7 +177,8 @@ export function renderBlockEditorModal(ui) {
           </div>
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-time">Time</label>
-            <input class="input" id="block-time" name="time" type="time" value="${escapeHtml(draft.time || "")}" />
+            <input class="input" id="block-time" name="time" type="time" step="900" value="${escapeHtml(timeValue)}" />
+            <p class="mt-1 text-xs" style="color:var(--mute)">Snaps to :00, :15, :30, :45</p>
           </div>
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-details">Details</label>
@@ -233,10 +235,12 @@ export function renderEditConfirmModal() {
 
 export function createBlockFromForm(form) {
   const tags = parseTagsFromForm(form.tags?.value || "");
+  const rawTime = form.time?.value || "";
+  const time = snapTimeInputToDisplay(rawTime) || rawTime;
   return {
     id: uid("custom"),
     label: form.label.value.trim(),
-    time: form.time.value,
+    time,
     details: form.details.value.trim(),
     soft: Boolean(form.soft?.checked),
     tags: normalizeTags(tags),

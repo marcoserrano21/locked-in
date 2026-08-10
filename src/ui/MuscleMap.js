@@ -1,68 +1,82 @@
 import { escapeHtml } from "./dom.js";
 import { normalizeMuscleGroup } from "../fitness.js";
 
-const BODY = "rgba(139, 147, 167, 0.35)";
+const BODY = "rgba(139, 147, 167, 0.38)";
 const HI = "#F2F4F8";
+const HEAD = "rgba(139, 147, 167, 0.28)";
 
-const REGION = {
-  head: BODY,
-  chest: BODY,
-  abs: BODY,
-  back: BODY,
-  shoulders: BODY,
-  biceps: BODY,
-  triceps: BODY,
-  quads: BODY,
-  hamstrings: BODY,
-  glutes: BODY,
-  calves: BODY,
-  traps: BODY,
-  lower_back: BODY,
-  abductors: BODY,
-  adductors: BODY,
-  forearms: BODY,
-  neck: BODY,
-};
+const FRONT_VIEW = new Set([
+  "chest",
+  "abs",
+  "shoulders",
+  "biceps",
+  "quads",
+  "adductors",
+  "neck",
+  "forearms",
+]);
 
-function regionsFor(group) {
+function fill(active, key) {
+  return active === key ? HI : BODY;
+}
+
+function useBackView(group) {
   const g = normalizeMuscleGroup(group);
-  const r = { ...REGION };
-  if (!g || g === "all") return r;
-  if (r[g] !== undefined) r[g] = HI;
-  // legacy aliases already normalized
-  return r;
+  return g && !FRONT_VIEW.has(g);
+}
+
+function frontFigure(active) {
+  const f = (key) => fill(active, key);
+  return `
+    <ellipse cx="32" cy="10" rx="8" ry="9" fill="${HEAD}"/>
+    <path d="M27 17.5c1.4 2.4 3 3.5 5 3.5s3.6-1.1 5-3.5c-1.4 1-3 1.6-5 1.6s-3.6-.6-5-1.6z" fill="${f("neck")}"/>
+    <path d="M16 24c2.6-3.6 6.4-5.4 16-5.4s13.4 1.8 16 5.4c1.8 2.4 2.2 5 1.8 7.4-.5 3.2-3 5.6-6.5 6.2H20.7c-3.5-.6-6-3-6.5-6.2-.4-2.4 0-5 1.8-7.4z" fill="${f("chest")}"/>
+    <path d="M12 25c-2.8 1.4-4.8 3.8-5.4 6.6-.5 1.8.2 3.6 1.8 4.2 1.8.8 3.8.2 5-1.6 1.4-2 1.8-4.2 1.4-6.2-.2-1.2-1-2.2-2.8-2.8z" fill="${f("shoulders")}"/>
+    <path d="M52 25c2.8 1.4 4.8 3.8 5.4 6.6.5 1.8-.2 3.6-1.8 4.2-1.8.8-3.8.2-5-1.6-1.4-2-1.8-4.2-1.4-6.2.2-1.2 1-2.2 2.8-2.8z" fill="${f("shoulders")}"/>
+    <path d="M9 34c-.8 3.6-.5 7.2.8 10.4.8 1.8 2.6 2.8 4.2 2.2 1.4-.6 2-2 1.8-3.6-.4-3.2-.2-6.4.5-9.4.2-1.2-.8-2.2-2.2-2.4-1.8-.4-3.8.8-5.1 3.8z" fill="${f("biceps")}"/>
+    <path d="M55 34c.8 3.6.5 7.2-.8 10.4-.8 1.8-2.6 2.8-4.2 2.2-1.4-.6-2-2-1.8-3.6.4-3.2.2-6.4-.5-9.4-.2-1.2.8-2.2 2.2-2.4 1.8-.4 3.8.8 5.1 3.8z" fill="${f("biceps")}"/>
+    <path d="M10 45c-.2 3.2.2 6.2 1.6 8.8.8 1.4 2.2 1.8 3.4 1 1-.8 1.2-1.8 1-3-.4-2.6-.4-5.2 0-7.6.2-1.2-.8-2-2-2.2-1.6-.2-3.4.6-4 3z" fill="${f("forearms")}"/>
+    <path d="M54 45c.2 3.2-.2 6.2-1.6 8.8-.8 1.4-2.2 1.8-3.4 1-1-.8-1.2-1.8-1-3 .4-2.6.4-5.2 0-7.6-.2-1.2.8-2 2-2.2 1.6-.2 3.4.6 4 3z" fill="${f("forearms")}"/>
+    <path d="M22 36h20c2 0 3.6 1.6 3.6 3.6 0 5.8-3.2 11.4-8.6 13.6-1.2.4-2.4.4-3.6 0-5.4-2.2-8.6-7.8-8.6-13.6 0-2 1.6-3.6 3.6-3.6z" fill="${f("abs")}"/>
+    <path d="M20 54c2.6-1 5.4-1.4 8.2-1.4h7.6c2.8 0 5.6.4 8.2 1.4 1.6.6 2.6 2 2.4 3.6-.4 3.6-1.8 9.2-2.8 13.6-.4 2-2.2 3.4-4.2 3.4h-9.6c-2 0-3.8-1.4-4.2-3.4-1-4.4-2.4-10-2.8-13.6-.2-1.6.8-3 2.4-3.6z" fill="${f("quads")}"/>
+    <path d="M24 58c.8 3.6 1.2 7 1.2 10 0 1.4-.8 2.6-2.2 2.6-1.2 0-2-.8-2.2-2-.8-3.6-1.2-7.2-1.2-10.4 0-1.2.8-2.2 2-2.2 1 0 1.8.8 2.4 2z" fill="${f("adductors")}"/>
+    <path d="M40 58c-.8 3.6-1.2 7-1.2 10 0 1.4.8 2.6 2.2 2.6 1.2 0 2-.8 2.2-2 .8-3.6 1.2-7.2 1.2-10.4 0-1.2-.8-2.2-2-2.2-1 0-1.8.8-2.4 2z" fill="${f("adductors")}"/>
+    <path d="M22 72c1 4 1.4 7.6 1.4 10.6 0 1.8-1.4 3.2-3 3-1.4-.2-2.4-1.4-2.4-2.6-.2-3.8-.8-7.4-1.6-10.4-.2-1.2.4-2.2 1.6-2.4 1.6-.4 3.2.2 4 2z" fill="${f("calves")}"/>
+    <path d="M42 72c-1 4-1.4 7.6-1.4 10.6 0 1.8 1.4 3.2 3 3 1.4-.2 2.4-1.4 2.4-2.6.2-3.8.8-7.4 1.6-10.4.2-1.2-.4-2.2-1.6-2.4-1.6-.4-3.2.2-4 2z" fill="${f("calves")}"/>
+  `;
+}
+
+function backFigure(active) {
+  const f = (key) => fill(active, key);
+  return `
+    <ellipse cx="32" cy="10" rx="8" ry="9" fill="${HEAD}"/>
+    <path d="M27 17.5c1.4 2.4 3 3.5 5 3.5s3.6-1.1 5-3.5c-1.4 1-3 1.6-5 1.6s-3.6-.6-5-1.6z" fill="${f("neck")}"/>
+    <path d="M18 22c3.2-2.8 7-4 14-4s10.8 1.2 14 4c1.8 1.6 2.8 3.8 2.6 6-.4 3.6-3.2 6.4-6.6 7l-16.8 0c-3.4-.6-6.2-3.4-6.6-7-.2-2.2.8-4.4 2.6-6z" fill="${f("traps")}"/>
+    <path d="M16 30c2-.5 4.2-.7 6.4-.7h11.2c2.2 0 4.4.2 6.4.7 2.4.6 4 2.8 3.8 5.2-.4 5.4-3.6 10.6-8.8 13-1.6.8-3.4.8-5 0-5.2-2.4-8.4-7.6-8.8-13-.2-2.4 1.4-4.6 3.8-5.2z" fill="${f("back")}"/>
+    <path d="M22 46h20c1.8 0 3.2 1.4 3.2 3.2 0 3.6-1.8 7-5 8.6-1 .4-2 .4-3 0-3.2-1.6-5-5-5-8.6 0-1.8 1.4-3.2 3.2-3.2z" fill="${f("lower_back")}"/>
+    <path d="M12 25c-2.8 1.4-4.8 3.8-5.4 6.6-.5 1.8.2 3.6 1.8 4.2 1.8.8 3.8.2 5-1.6 1.4-2 1.8-4.2 1.4-6.2-.2-1.2-1-2.2-2.8-2.8z" fill="${f("shoulders")}"/>
+    <path d="M52 25c2.8 1.4 4.8 3.8 5.4 6.6.5 1.8-.2 3.6-1.8 4.2-1.8.8-3.8.2-5-1.6-1.4-2-1.8-4.2-1.4-6.2.2-1.2 1-2.2 2.8-2.8z" fill="${f("shoulders")}"/>
+    <path d="M9 34c-.8 3.6-.5 7.2.8 10.4.8 1.8 2.6 2.8 4.2 2.2 1.4-.6 2-2 1.8-3.6-.4-3.2-.2-6.4.5-9.4.2-1.2-.8-2.2-2.2-2.4-1.8-.4-3.8.8-5.1 3.8z" fill="${f("triceps")}"/>
+    <path d="M55 34c.8 3.6.5 7.2-.8 10.4-.8 1.8-2.6 2.8-4.2 2.2-1.4-.6-2-2-1.8-3.6.4-3.2.2-6.4-.5-9.4-.2-1.2.8-2.2 2.2-2.4 1.8-.4 3.8.8 5.1 3.8z" fill="${f("triceps")}"/>
+    <path d="M10 45c-.2 3.2.2 6.2 1.6 8.8.8 1.4 2.2 1.8 3.4 1 1-.8 1.2-1.8 1-3-.4-2.6-.4-5.2 0-7.6.2-1.2-.8-2-2-2.2-1.6-.2-3.4.6-4 3z" fill="${f("forearms")}"/>
+    <path d="M54 45c.2 3.2-.2 6.2-1.6 8.8-.8 1.4-2.2 1.8-3.4 1-1-.8-1.2-1.8-1-3 .4-2.6.4-5.2 0-7.6-.2-1.2.8-2 2-2.2 1.6-.2 3.4.6 4 3z" fill="${f("forearms")}"/>
+    <path d="M19 55c2.8-.8 5.8-1.2 8.8-1.2h8.4c3 0 6 .4 8.8 1.2 1.8.5 3 2 2.8 3.8-.4 3-1.6 6-3.6 7.4-1.2.8-2.6.8-3.8 0l-5-2.8-5 2.8c-1.2.8-2.6.8-3.8 0-2-1.4-3.2-4.4-3.6-7.4-.2-1.8.8-3.3 2.8-3.8z" fill="${f("glutes")}"/>
+    <path d="M20 64c2-.5 4.2-.7 6.4-.7h7.2c2.2 0 4.4.2 6.4.7 1.6.4 2.6 1.8 2.4 3.2-.6 3.8-1.8 9-2.8 12.8-.4 1.8-2 3-3.8 3h-9.2c-1.8 0-3.4-1.2-3.8-3-1-3.8-2.2-9-2.8-12.8-.2-1.4.8-2.8 2.4-3.2z" fill="${f("hamstrings")}"/>
+    <path d="M18 62c.5 3 0.8 5.8 0.8 8.4 0 1.4-.8 2.6-2 2.6-1.2 0-2-.8-2.2-2-.5-3.2-.8-6.2-1-9-.1-1.2.8-2 1.8-2 1 0 1.8.8 2.6 2z" fill="${f("abductors")}"/>
+    <path d="M46 62c-.5 3-.8 5.8-.8 8.4 0 1.4.8 2.6 2 2.6 1.2 0 2-.8 2.2-2 .5-3.2.8-6.2 1-9 .1-1.2-.8-2-1.8-2-1 0-1.8.8-2.6 2z" fill="${f("abductors")}"/>
+    <path d="M22 72c1 4 1.4 7.6 1.4 10.6 0 1.8-1.4 3.2-3 3-1.4-.2-2.4-1.4-2.4-2.6-.2-3.8-.8-7.4-1.6-10.4-.2-1.2.4-2.2 1.6-2.4 1.6-.4 3.2.2 4 2z" fill="${f("calves")}"/>
+    <path d="M42 72c-1 4-1.4 7.6-1.4 10.6 0 1.8 1.4 3.2 3 3 1.4-.2 2.4-1.4 2.4-2.6.2-3.8.8-7.4 1.6-10.4.2-1.2-.4-2.2-1.6-2.4-1.6-.4-3.2.2-4 2z" fill="${f("calves")}"/>
+  `;
 }
 
 export function renderMuscleMap(muscleGroup = "", className = "") {
-  const r = regionsFor(muscleGroup);
+  const g = normalizeMuscleGroup(muscleGroup);
+  const active = !g || g === "all" ? "" : g;
+  const body = useBackView(g) ? backFigure(active) : frontFigure(active);
+
   return `
-    <svg class="${escapeHtml(className)}" viewBox="0 0 64 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <ellipse cx="32" cy="12" rx="9" ry="10" fill="${r.head}"/>
-      <rect x="28" y="20" width="8" height="5" rx="2" fill="${r.neck}"/>
-      <rect x="22" y="24" width="20" height="13" rx="4" fill="${r.chest}"/>
-      <rect x="24" y="28" width="16" height="10" rx="3" fill="${r.traps}" opacity="0.55"/>
-      <rect x="18" y="37" width="28" height="11" rx="3" fill="${r.abs}"/>
-      <rect x="22" y="38" width="20" height="10" rx="3" fill="${r.lower_back}" opacity="0.7"/>
-      <rect x="10" y="25" width="8" height="10" rx="3" fill="${r.shoulders}"/>
-      <rect x="46" y="25" width="8" height="10" rx="3" fill="${r.shoulders}"/>
-      <rect x="8" y="34" width="8" height="16" rx="3" fill="${r.biceps}"/>
-      <rect x="48" y="34" width="8" height="16" rx="3" fill="${r.biceps}"/>
-      <rect x="8" y="42" width="7" height="12" rx="2" fill="${r.triceps}" opacity="0.85"/>
-      <rect x="49" y="42" width="7" height="12" rx="2" fill="${r.triceps}" opacity="0.85"/>
-      <rect x="9" y="48" width="6" height="10" rx="2" fill="${r.forearms}"/>
-      <rect x="49" y="48" width="6" height="10" rx="2" fill="${r.forearms}"/>
-      <rect x="22" y="48" width="20" height="8" rx="3" fill="${r.glutes}" opacity="0.75"/>
-      <rect x="20" y="52" width="10" height="20" rx="4" fill="${r.quads}"/>
-      <rect x="34" y="52" width="10" height="20" rx="4" fill="${r.quads}"/>
-      <rect x="21" y="58" width="8" height="14" rx="3" fill="${r.hamstrings}" opacity="0.8"/>
-      <rect x="35" y="58" width="8" height="14" rx="3" fill="${r.hamstrings}" opacity="0.8"/>
-      <rect x="18" y="56" width="5" height="12" rx="2" fill="${r.abductors}" opacity="0.7"/>
-      <rect x="41" y="56" width="5" height="12" rx="2" fill="${r.abductors}" opacity="0.7"/>
-      <rect x="24" y="58" width="5" height="10" rx="2" fill="${r.adductors}" opacity="0.65"/>
-      <rect x="35" y="58" width="5" height="10" rx="2" fill="${r.adductors}" opacity="0.65"/>
-      <rect x="21" y="72" width="8" height="14" rx="3" fill="${r.calves}"/>
-      <rect x="35" y="72" width="8" height="14" rx="3" fill="${r.calves}"/>
-      <rect x="24" y="36" width="16" height="12" rx="3" fill="${r.back}" opacity="0.55"/>
+    <svg class="muscle-map ${escapeHtml(className)}" viewBox="0 0 64 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      ${body}
     </svg>
   `;
 }

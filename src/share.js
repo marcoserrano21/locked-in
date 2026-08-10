@@ -77,31 +77,51 @@ export async function renderShareCardBlob(state, scope = "day", date = todayKey(
 
   let headline = "";
   let sub = "";
+  let sealed = false;
   if (scope === "week") {
     const keys = weekDates(todayKey(), 0);
-    let sealed = 0;
+    let sealedCount = 0;
     keys.forEach((k) => {
-      if (completionForDate(state, k).complete) sealed += 1;
+      if (completionForDate(state, k).complete) sealedCount += 1;
     });
-    headline = `${sealed}/7 sealed`;
+    headline = `${sealedCount}/7 sealed`;
     sub = `${sessionsThisWeek(state.fitnessLog || []).length} workouts this week`;
+    sealed = sealedCount >= 5;
   } else if (scope === "month") {
     headline = `${streak} day streak`;
     sub = "Last 30 days of proof";
+    sealed = streak >= 7;
   } else {
     const c = completionForDate(state, date);
     headline = c.complete ? "Day sealed" : "In progress";
     sub = `${c.doneCore}/${c.coreCount} core · Day ${dayNum}/${length}`;
+    sealed = c.complete;
   }
 
   ctx.fillText(headline, 48, 200);
   ctx.fillStyle = "#8B93A7";
   ctx.font = "500 32px Barlow, sans-serif";
   ctx.fillText(sub, 48, 260);
-  ctx.fillText(`Streak ${streak}`, 48, 320);
+  ctx.fillStyle = "#3ECF8E";
+  ctx.font = "700 48px Barlow Condensed, sans-serif";
+  ctx.fillText(`Streak ${streak}`, 48, 340);
+
+  if (sealed) {
+    ctx.save();
+    ctx.translate(520, 160);
+    ctx.rotate(-0.2);
+    ctx.strokeStyle = "#3ECF8E";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(-70, -28, 140, 56);
+    ctx.fillStyle = "#3ECF8E";
+    ctx.font = "700 28px Barlow Condensed, sans-serif";
+    ctx.fillText("SEALED", -52, 10);
+    ctx.restore();
+  }
+
   ctx.fillStyle = "#F2F4F8";
   ctx.font = "600 36px Barlow, sans-serif";
-  ctx.fillText("Proof over vibes.", 48, 420);
+  ctx.fillText("Proof over vibes.", 48, 460);
   ctx.fillStyle = "#8B93A7";
   ctx.font = "500 28px Barlow, sans-serif";
   ctx.fillText(`— ${name}`, 48, 880);

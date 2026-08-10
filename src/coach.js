@@ -4,6 +4,14 @@ import { todayKey } from "./dates.js";
 import { completionForDate, streakAtRisk } from "./streaks.js";
 import { resolveBlocksForDate } from "./work.js";
 import { totalMiles } from "./uber.js";
+import { copy } from "./copy/voice.js";
+
+function isWorkoutBlock(block) {
+  if (!block) return false;
+  const label = String(block.label || "").toLowerCase();
+  const tags = (block.tags || []).map((t) => String(t.label || t).toLowerCase());
+  return tags.includes("workout") || /workout|gym|lift|train/.test(label);
+}
 
 /**
  * Rule-based Coach Brain. Deterministic, on-device, no cloud ML.
@@ -19,20 +27,23 @@ export function coachHints(state, opts = {}) {
   const dayNum = state.challenge ? challengeDayNumber(state.challenge) : 0;
   const soft = Number(state.settings?.uberSoftStop || 400);
   const used = totalMiles(state);
+  const hour = new Date().getHours();
+  const focusBlock = opts.focusBlock || null;
 
-  if (!blocks.length) {
+  const emptyWeek = Object.values(state.schedule || {}).every((day) => !(day || []).length);
+  if (emptyWeek && !state.settings?.setupWizardCompleted && state.preset === "blank") {
     hints.push({
-      id: "empty-day",
-      message: "No blocks on today. Open Edit and build the track.",
+      id: "empty-wizard",
+      message: copy.coach.emptyWizard,
       action: "open-edit",
       actionLabel: "Open Edit",
     });
   }
 
-  if (isToday && streakAtRisk(state)) {
+  if (blocks.length && isToday && streakAtRisk(state)) {
     hints.push({
       id: "streak-risk",
-      message: "Core still open. Midnight does not care about your mood.",
+      message: copy.coach.streakRisk,
       action: null,
     });
   }
@@ -42,25 +53,22 @@ export function coachHints(state, opts = {}) {
     if (flowIncomplete) {
       hints.push({
         id: "monday-flow",
-        message: "Monday money block. Weekly Flow is still open.",
+        message: copy.coach.mondayFlow,
         action: "open-hustle-flow",
         actionLabel: "Open Hustle Flow",
       });
     }
   }
 
-  const workoutBlock = blocks.find((b) => {
-    const label = String(b.label || "").toLowerCase();
-    const tags = (b.tags || []).map((t) => String(t.label || "").toLowerCase());
-    return tags.includes("workout") || /workout|gym|lift|train/.test(label);
-  });
+  const workoutBlock = blocks.find((b) => isWorkoutBlock(b));
   const hasWorkoutToday = (state.fitnessLog || []).some(
     (s) => s.date === today && (s.completedAt || (s.exercises || []).length > 0)
   );
-  if (workoutBlock && !hasWorkoutToday && isToday) {
+  const suppressWorkoutHint = focusBlock && isWorkoutBlock(focusBlock);
+  if (workoutBlock && !hasWorkoutToday && isToday && !suppressWorkoutHint) {
     hints.push({
       id: "workout-block",
-      message: "Workout block is on today. Log the session while it is fresh.",
+      message: hour >= 20 ? copy.coach.workoutLate : copy.coach.workoutBlock,
       action: "open-fitness-today",
       actionLabel: "Open Fitness",
     });
@@ -69,7 +77,7 @@ export function coachHints(state, opts = {}) {
   if (soft > 0 && used >= soft * 0.9) {
     hints.push({
       id: "miles-soft",
-      message: `Miles at ${Math.round((used / soft) * 100)}% of soft stop. Respect the bridge.`,
+      message: copy.coach.milesSoft(Math.round((used / soft) * 100)),
       action: "open-miles",
       actionLabel: "Open Miles",
     });
@@ -85,7 +93,16 @@ export function coachHints(state, opts = {}) {
   if (dayNum >= 21 && unanswered > 0) {
     hints.push({
       id: "day30-early",
-      message: `Day ${dayNum}. ${unanswered} Day 30 answers still open. Early beats surprise.`,
+      message: copy.coach.day30Early(dayNum, unanswered),
+      action: "set-tab",
+      actionLabel: "Open Proof",
+      tab: "proof",
+    });
+  }
+  if (dayNum >= 25 && unanswered / qCount >= 0.5) {
+    hints.push({
+      id: "day30-late",
+      message: copy.coach.day30Late(dayNum),
       action: "set-tab",
       actionLabel: "Open Proof",
       tab: "proof",
@@ -98,9 +115,13 @@ export function coachHints(state, opts = {}) {
         h.id === "monday-flow" ||
         h.id === "miles-soft" ||
         h.id === "day30-early" ||
-        h.id === "workout-block"
+        h.id === "day30-late" ||
+        h.id === "workout-block" ||
+        h.id === "empty-wizard"
     );
   }
 
   return hints;
 }
+
+export { isWorkoutBlock };

@@ -4,7 +4,6 @@ import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFitness } from "./Fitness.js";
 import { paginate, renderPager } from "./Pagination.js";
-import { renderPremiumUnlockCard } from "./PremiumUnlock.js";
 
 const STATUSES = ["sent", "replied", "call", "won", "lost"];
 const HUSTLE_TABS = [
@@ -247,7 +246,11 @@ export function renderFreelance(state, ui) {
   const activeView = premium ? view : "fitness";
   const body =
     activeView === "fitness"
-      ? `${renderFitness(state, ui)}${premium ? "" : `<div class="mt-3">${renderPremiumUnlockCard()}</div>`}`
+      ? `${renderFitness(state, ui)}${
+          premium
+            ? ""
+            : `<p class="mt-3 text-center text-xs" style="color:var(--mute)"><button type="button" class="underline" data-action="open-premium-unlock">Unlock Premium preview</button></p>`
+        }`
       : renderHustlePanel(state, ui);
 
   return `

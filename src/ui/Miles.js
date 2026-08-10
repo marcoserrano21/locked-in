@@ -36,20 +36,26 @@ export function renderMiles(state, ui = {}) {
     )
     .join("");
 
+  const isMarco = state.preset === "marco";
+  const title = isMarco ? "Miles" : "Money";
+  const subtitle = isMarco
+    ? `Model 3 RWD · FSD Supervised. Bridge income, not identity. ${CHALLENGE_META.uberNightsPerWeek} nights / week · ${CHALLENGE_META.uberWindow}`
+    : `${escapeHtml(state.settings?.moneyLabel || "Side income")}. Soft stop then hard ceiling. Numbers, not vibes.`;
+  const unitLabel = isMarco || state.settings?.moneyMode !== "hours" ? "miles used" : "units used";
+
   return `
     <section class="screen">
       <header class="page-header">
-        <p class="eyebrow">Miles</p>
+        <p class="eyebrow">${escapeHtml(title)}</p>
         <h1 class="display">Money truth</h1>
         <p class="mt-2 text-sm" style="color:var(--mute)">
-          Model 3 RWD · FSD Supervised. Bridge income, not identity.
-          ${CHALLENGE_META.uberNightsPerWeek} nights / week · ${escapeHtml(CHALLENGE_META.uberWindow)}
+          ${escapeHtml(subtitle)}
         </p>
       </header>
 
       <section class="panel grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs" style="color:var(--mute)">miles used</p>
+          <p class="text-xs" style="color:var(--mute)">${escapeHtml(unitLabel)}</p>
           <p class="display text-4xl" style="color:${overCap ? "var(--danger)" : overSoft ? "var(--maintain)" : "var(--text)"}">${miles}</p>
           <p class="text-xs" style="color:var(--mute)">of ${cap} cap</p>
         </div>

@@ -27,7 +27,10 @@ export function blocksFor(state, dayIdx) {
   return state.schedule?.[key] || [];
 }
 
-export function dayType(dayIdx) {
+export function dayType(dayIdx, state = null) {
+  if (state?.settings?.buildDays && Array.isArray(state.settings.buildDays)) {
+    return state.settings.buildDays.includes(Number(dayIdx)) ? "foundation" : "maintenance";
+  }
   return DAY_TYPES[dayIdx] || "maintenance";
 }
 

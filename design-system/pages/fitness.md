@@ -6,10 +6,12 @@
 - Save builds a session from selected groups + Profile equipment availability
 - Athletic display numbers for week count, streak, volume (Barlow Condensed)
 - Exercise cards: elevated surface, larger muscle thumb, previous-set ghost line — no chips, no Form guide
-- Set rows: check seal + weight/reps + 3-dot menu (Replace / Don't recommend again / Delete)
+- Set rows: check seal + weight/reps + rest shortcut + delete
+- Rest timer bar: 60 / 90 / 120 presets; auto-starts on set complete; Skip clears
+- History detail: per-exercise SVG sparkline (last 5 session volumes)
 - Add exercise: premium bottom sheet with search, muscle filter grid (icon cells), large thumbs, even spacing
 - Today | History segmented control; History paginated (10/page)
 - Complete workout: brief celebrate moment with sealed-actions inset
 - Dark ink stage palette from MASTER; build green for done sets and primary CTAs
 - No emoji icons; SVG only
-- Honor prefers-reduced-motion for celebrate pop-in
+- Honor prefers-reduced-motion for celebrate pop-in and check-seal

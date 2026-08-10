@@ -59,6 +59,12 @@ Never put light text on white chips. Use `--chip` / `--chip-ink` and `--soft-chi
 
 Fixed min-height rows. Titles wrap up to two lines. Longer context lives in `details` (editor + Now card), so list rhythm stays even.
 
+## Voice (Marco)
+
+Copy lives in `src/copy/voice.js`. Short, curious, proof-over-vibes. Contractions OK. No em dashes. No corporate filler ("leverage", "synergy"). One primary CTA per view. Subtitles explain the rule, not the feature list.
+
+Examples: "One block at a time. Core counts. Soft doesn't." / "Proof over vibes."
+
 ## Accessibility
 
 - Visible focus rings
