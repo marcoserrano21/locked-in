@@ -37,6 +37,18 @@ import {
   deleteProfile,
   setChallengeLength,
   setDay30Questions,
+  needsWelcome,
+  completeWelcome,
+  loadMarcoDemo,
+  startWorkout,
+  addExerciseToSession,
+  addFitnessSet,
+  updateFitnessSet,
+  toggleFitnessSetDone,
+  deleteFitnessSet,
+  deleteFitnessExercise,
+  completeWorkout,
+  deleteWorkout,
 } from "./store.js";
 import { startChallenge } from "./challenge.js";
 import { blocksFor, uid } from "./schedule.js";
@@ -49,6 +61,8 @@ import { renderToday } from "./ui/Today.js";
 import { renderProof } from "./ui/Proof.js";
 import { renderMiles, renderUberEditorModal } from "./ui/Miles.js";
 import { renderFreelance, hustlePlaybook, renderOutreachEditorModal } from "./ui/Freelance.js";
+import { renderAddExerciseModal, renderFitnessCelebrate } from "./ui/Fitness.js";
+import { renderWelcomeModal } from "./ui/Welcome.js";
 import {
   renderBlockEditorModal,
   renderEventEditorModal,
@@ -89,7 +103,7 @@ function showFlash(type, message) {
 }
 
 function render() {
-  const needsCommit = !state.challenge?.startDate;
+  const needsCommit = !state.challenge?.startDate && ui.modal !== "welcome" && !needsWelcome;
 
   let body = "";
   if (ui.tab === "proof") body = renderProof(state, ui);
@@ -108,8 +122,14 @@ function render() {
   else if (ui.modal === "profile-editor") modal = renderProfileEditorModal(ui, listProfiles());
   else if (ui.modal === "delete-profile") modal = renderDeleteProfileModal(ui);
   else if (ui.modal === "reset-confirm") modal = renderResetConfirmModal(state);
+  else if (ui.modal === "welcome") modal = renderWelcomeModal(ui);
+  else if (ui.modal === "add-exercise") modal = renderAddExerciseModal(ui, state.fitnessSettings);
 
-  const celebrate = ui.celebrate ? renderCelebrate(ui.celebrate) : "";
+  const celebrate = ui.celebrate
+    ? ui.celebrate.type === "fitness"
+      ? renderFitnessCelebrate(ui.celebrate)
+      : renderCelebrate(ui.celebrate)
+    : "";
   const toast = renderToast(ui.toast);
 
   app.innerHTML = `
@@ -175,6 +195,9 @@ function clearModalState() {
     editingOutreach: null,
     editingProfile: null,
     deletingProfile: null,
+    fitnessAddSession: null,
+    fitnessSearch: "",
+    fitnessMuscle: "all",
   });
 }
 
@@ -213,6 +236,108 @@ app.addEventListener("click", (event) => {
 
   if (action === "hustle-tab") {
     setUi({ hustleTab: t.dataset.tab });
+    return;
+  }
+
+  if (action === "hustle-view") {
+    setUi({ hustleView: t.dataset.view });
+    return;
+  }
+
+  if (action === "fitness-tab") {
+    setUi({ fitnessTab: t.dataset.tab });
+    return;
+  }
+
+  if (action === "start-workout") {
+    startWorkout();
+    showToast("Workout started");
+    return;
+  }
+
+  if (action === "open-add-exercise") {
+    setUi({
+      modal: "add-exercise",
+      fitnessAddSession: t.dataset.session,
+      fitnessSearch: "",
+      fitnessMuscle: "all",
+    });
+    return;
+  }
+
+  if (action === "pick-exercise") {
+    addExerciseToSession(t.dataset.session, t.dataset.name, t.dataset.muscle || "");
+    clearModalState();
+    showToast("Exercise added");
+    return;
+  }
+
+  if (action === "fitness-muscle") {
+    setUi({ fitnessMuscle: t.dataset.muscle });
+    return;
+  }
+
+  if (action === "add-fitness-set") {
+    addFitnessSet(t.dataset.session, t.dataset.exercise);
+    return;
+  }
+
+  if (action === "toggle-fitness-set") {
+    toggleFitnessSetDone(t.dataset.session, t.dataset.exercise, t.dataset.set);
+    return;
+  }
+
+  if (action === "delete-fitness-set") {
+    deleteFitnessSet(t.dataset.session, t.dataset.exercise, t.dataset.set);
+    return;
+  }
+
+  if (action === "delete-fitness-exercise") {
+    deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
+    showToast("Exercise removed");
+    return;
+  }
+
+  if (action === "complete-workout") {
+    const payload = completeWorkout(t.dataset.session);
+    if (payload) {
+      setUi({
+        celebrate: { type: "fitness", ...payload },
+        fitnessTab: "today",
+      });
+    }
+    return;
+  }
+
+  if (action === "delete-workout") {
+    deleteWorkout(t.dataset.session);
+    showToast("Workout removed");
+    return;
+  }
+
+  if (action === "dismiss-fitness-celebrate") {
+    setUi({ celebrate: null, fitnessTab: "history" });
+    return;
+  }
+
+  if (action === "welcome-demo") {
+    loadMarcoDemo();
+    showToast("Marco demo loaded");
+    return;
+  }
+
+  if (action === "welcome-back") {
+    setUi({ welcomeStep: 1 });
+    return;
+  }
+
+  if (action === "open-fitness-today") {
+    setUi({ tab: "freelance", hustleView: "fitness", fitnessTab: "today", modal: null });
+    return;
+  }
+
+  if (action === "open-hustle-flow") {
+    setUi({ tab: "freelance", hustleView: "hustle", hustleTab: "flow", modal: null });
     return;
   }
 
@@ -301,11 +426,6 @@ app.addEventListener("click", (event) => {
       canInstallPwa = false;
       updateSettings({ installTipDismissed: true });
     });
-    return;
-  }
-
-  if (action === "open-hustle-flow") {
-    setUi({ tab: "freelance", hustleTab: "flow", modal: null });
     return;
   }
 
@@ -663,6 +783,17 @@ app.addEventListener("input", (event) => {
   const el = event.target;
   if (el?.dataset?.action === "set-override-date") {
     setUi({ overrideDate: el.value });
+    return;
+  }
+  if (el?.dataset?.action === "fitness-set-field") {
+    const value = el.dataset.field === "reps" ? parseInt(el.value, 10) : parseFloat(el.value);
+    updateFitnessSet(el.dataset.session, el.dataset.exercise, el.dataset.set, {
+      [el.dataset.field]: Number.isFinite(value) ? value : 0,
+    });
+    return;
+  }
+  if (el?.name === "query" && el.closest('[data-action="search-exercise"]')) {
+    setUi({ fitnessSearch: el.value });
   }
 });
 
@@ -821,6 +952,36 @@ app.addEventListener("submit", (event) => {
       saveBlocksContext(mode, day, date, blocks, `Edited block (${mode})`);
     }
     clearModalState();
+    return;
+  }
+
+  if (form.dataset.action === "welcome-name") {
+    const name = form.displayName.value.trim();
+    if (!name) return;
+    setUi({ welcomeStep: 2, welcomeName: name, modal: "welcome" });
+    return;
+  }
+
+  if (form.dataset.action === "welcome-focus") {
+    const name = form.displayName.value.trim();
+    const focus = form.focus.value || "both";
+    completeWelcome(name, focus);
+    showToast(`Welcome, ${name.split(" ")[0]}`);
+    return;
+  }
+
+  if (form.dataset.action === "search-exercise") {
+    setUi({ fitnessSearch: form.query.value });
+    return;
+  }
+
+  if (form.dataset.action === "custom-exercise") {
+    const sessionId = form.sessionId.value;
+    const name = form.name.value.trim();
+    if (!sessionId || !name) return;
+    addExerciseToSession(sessionId, name);
+    clearModalState();
+    showToast("Exercise added");
   }
 });
 
@@ -831,6 +992,9 @@ resetToTodayUi();
 setUi({
   tab: "today",
   theme: state.settings?.theme || getStoredTheme(),
+  hustleView: "fitness",
+  fitnessTab: "today",
+  ...(needsWelcome ? { modal: "welcome", welcomeStep: 1 } : {}),
 });
 subscribe(render);
 render();

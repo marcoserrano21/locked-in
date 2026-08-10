@@ -70,7 +70,7 @@ export function renderProfile(state, ui = {}, profiles = []) {
           <button type="button" class="btn btn-primary flex-1" data-action="create-profile" data-kind="blank">Add blank</button>
           <button type="button" class="btn flex-1" data-action="create-profile" data-kind="marco">Add Marco preset</button>
         </div>
-        <p class="text-xs" style="color:var(--mute)">Local only. Switch tracks without cloud accounts. At least one profile must remain.</p>
+        <p class="text-xs" style="color:var(--mute)">Your data stays on this device. Share the link; each person gets their own track. Export JSON to backup or move devices.</p>
       </section>
 
       <section class="panel">
@@ -160,7 +160,7 @@ export function renderProfile(state, ui = {}, profiles = []) {
             ? `<div class="banner banner-warn" role="status">
                 No fresh export in ${since == null ? `${BACKUP_STALE_DAYS}+` : since} day${since === 1 ? "" : "s"}. Last backup: ${escapeHtml(lastLabel)}. Export is your account on this phone.
               </div>`
-            : `<p class="text-xs" style="color:var(--mute)">Last export: ${escapeHtml(lastLabel)}. Local only. Device wipe = streak gone.</p>`
+            : `<p class="text-xs" style="color:var(--mute)">Last export: ${escapeHtml(lastLabel)}. Do not share backup files publicly. Device wipe = data gone unless exported.</p>`
         }
         <div class="flex flex-wrap gap-2">
           <button type="button" class="btn ${stale ? "btn-primary" : ""}" data-action="export-backup">Export JSON</button>
