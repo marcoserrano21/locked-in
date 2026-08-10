@@ -47,6 +47,15 @@ export let ui = {
   celebrate: null,
   theme: "dark",
   planMode: "template",
+  selectedMuscleGroups: [],
+  fitnessHistoryPage: 0,
+  hustleLogPage: 0,
+  milesPage: 0,
+  openExerciseMenu: null,
+  replaceExercise: null,
+  fitnessSearch: "",
+  fitnessMuscle: "all",
+  fitnessAddSession: null,
 };
 
 function defaultProfileData() {
@@ -90,6 +99,8 @@ function defaultProfileData() {
       tourStep: 0,
       tourCompleted: false,
       modulesUnlocked: { proof: true, miles: true },
+      premiumUnlocked: false,
+      hustlePlaybook: null,
     },
   };
 }
@@ -123,6 +134,8 @@ function blankProfileData(displayName = "New track") {
       tourStep: 0,
       tourCompleted: false,
       modulesUnlocked: { proof: false, miles: false },
+      premiumUnlocked: false,
+      hustlePlaybook: null,
     },
   };
 }
@@ -892,6 +905,109 @@ export function deleteWorkout(sessionId) {
   patchState((s) => ({
     ...s,
     fitnessLog: (s.fitnessLog || []).filter((w) => w.id !== sessionId),
+  }));
+}
+
+export function setEquipmentAvailable(list) {
+  const next = Array.isArray(list) ? list.map(String) : [];
+  patchState((s) => ({
+    ...s,
+    fitnessSettings: {
+      ...defaultFitnessSettings(),
+      ...s.fitnessSettings,
+      equipmentAvailable: next,
+    },
+  }));
+}
+
+export function toggleEquipment(id) {
+  const key = String(id || "").trim();
+  if (!key) return;
+  patchState((s) => {
+    const current = s.fitnessSettings?.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
+    const has = current.includes(key);
+    const equipmentAvailable = has ? current.filter((x) => x !== key) : [...current, key];
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        equipmentAvailable,
+      },
+    };
+  });
+}
+
+export function blockExercise(name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return;
+  patchState((s) => {
+    const prev = s.fitnessSettings?.blockedExercises || [];
+    if (prev.some((n) => n.toLowerCase() === trimmed.toLowerCase())) return s;
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        blockedExercises: [...prev, trimmed],
+      },
+    };
+  });
+}
+
+export function unblockExercise(name) {
+  const trimmed = String(name || "").trim().toLowerCase();
+  if (!trimmed) return;
+  patchState((s) => ({
+    ...s,
+    fitnessSettings: {
+      ...defaultFitnessSettings(),
+      ...s.fitnessSettings,
+      blockedExercises: (s.fitnessSettings?.blockedExercises || []).filter(
+        (n) => n.toLowerCase() !== trimmed
+      ),
+    },
+  }));
+}
+
+export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGroup = "") {
+  const trimmed = String(name || "").trim();
+  if (!trimmed || !sessionId || !exerciseId) return;
+  const catalog = findExerciseCatalog(trimmed);
+  patchState((s) => {
+    const unitPref = s.fitnessSettings?.preferredUnit || "lb";
+    const group = muscleGroup || catalog?.muscleGroup || "";
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        recentExercises: touchRecentExercise(s.fitnessSettings, trimmed),
+      },
+      fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
+        mapExercise(session, exerciseId, () => makeExercise(trimmed, group, unitPref))
+      ),
+    };
+  });
+}
+
+export function setPremiumUnlocked(unlocked) {
+  patchState((s) => ({
+    ...s,
+    settings: { ...s.settings, premiumUnlocked: Boolean(unlocked) },
+  }));
+}
+
+export function updateHustlePlaybook(patch) {
+  patchState((s) => ({
+    ...s,
+    settings: {
+      ...s.settings,
+      hustlePlaybook: {
+        ...(s.settings?.hustlePlaybook || {}),
+        ...patch,
+      },
+    },
   }));
 }
 

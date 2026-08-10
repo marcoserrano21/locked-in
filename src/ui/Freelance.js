@@ -1,7 +1,10 @@
-import playbook from "../../content/freelance.playbook.json";
+import playbookSeed from "../../content/freelance.playbook.json";
+import { mergePlaybook } from "../hustle-playbook.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFitness } from "./Fitness.js";
+import { paginate, renderPager } from "./Pagination.js";
+import { renderPremiumUnlockCard } from "./PremiumUnlock.js";
 
 const STATUSES = ["sent", "replied", "call", "won", "lost"];
 const HUSTLE_TABS = [
@@ -51,6 +54,7 @@ function progressRail(done, total, label) {
 }
 
 function renderHustlePanel(state, ui) {
+  const playbook = mergePlaybook(state.settings?.hustlePlaybook);
   const log = state.outreachLog || [];
   const checks = state.hustleChecks || {};
   const tab = ui.hustleTab || "flow";
@@ -95,7 +99,7 @@ function renderHustlePanel(state, ui) {
       <section class="panel">
         <div class="mb-3 flex items-center justify-between gap-2">
           <p class="eyebrow mb-0">Weekly flow</p>
-          <span class="chip">${flowDone}/${playbook.weeklyFlow.length}</span>
+          <span class="text-xs" style="color:var(--mute)">${flowDone}/${playbook.weeklyFlow.length}</span>
         </div>
         <p class="mb-3 text-xs" style="color:var(--mute)">${escapeHtml(playbook.moneyBlock)}</p>
         <div class="space-y-2">${flow}</div>
@@ -107,7 +111,7 @@ function renderHustlePanel(state, ui) {
         <div class="rounded-2xl px-3 py-3" style="background:var(--bg-elev)">
           <div class="flex items-center justify-between gap-2 mb-2">
             <p class="text-sm font-semibold">${escapeHtml(w.label)}</p>
-            <button type="button" class="chip ${checks[w.id] ? "chip-build" : ""}" data-action="toggle-hustle" data-id="${escapeHtml(w.id)}">${checks[w.id] ? "done" : "mark"}</button>
+            <button type="button" class="btn !min-h-10 !text-xs ${checks[w.id] ? "btn-primary" : ""}" data-action="toggle-hustle" data-id="${escapeHtml(w.id)}">${checks[w.id] ? "done" : "mark"}</button>
           </div>
           <ul class="space-y-1 text-sm" style="color:var(--text-soft)">
             ${w.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
@@ -119,7 +123,7 @@ function renderHustlePanel(state, ui) {
       <section class="panel space-y-2">
         <div class="mb-1 flex items-center justify-between gap-2">
           <p class="eyebrow mb-0">4-week ramp</p>
-          <span class="chip">${rampDone}/${playbook.ramp.length}</span>
+          <span class="text-xs" style="color:var(--mute)">${rampDone}/${playbook.ramp.length}</span>
         </div>
         ${ramp}
       </section>`;
@@ -137,13 +141,11 @@ function renderHustlePanel(state, ui) {
             <p class="text-sm" style="color:var(--text-soft)">${escapeHtml(playbook.scripts[s.key])}</p>
           </div>`
         ).join("")}
-        <div class="flex flex-wrap gap-1 pt-1">
-          ${playbook.channels.map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
-        </div>
+        <p class="text-xs" style="color:var(--mute)">${playbook.channels.map((c) => escapeHtml(c)).join(" · ")}</p>
       </section>`;
   } else {
-    const rows = log
-      .slice(0, 20)
+    const { items: pageRows, page, totalPages } = paginate(log, ui.hustleLogPage || 0);
+    const rows = pageRows
       .map(
         (e) => `
         <div class="plan-row !min-h-[5.75rem]">
@@ -152,8 +154,8 @@ function renderHustlePanel(state, ui) {
               <p class="task-title">${escapeHtml(e.who)}</p>
               <div class="task-meta">
                 <span>${formatDisplayDate(e.date)}</span>
-                <span class="chip">${escapeHtml(e.channel || "dm")}</span>
-                <span class="chip chip-build">${escapeHtml(e.status)}</span>
+                <span>${escapeHtml(e.channel || "dm")}</span>
+                <span>${escapeHtml(e.status)}</span>
               </div>
               ${e.note ? `<p class="mt-1 text-xs" style="color:var(--text-soft)">${escapeHtml(e.note)}</p>` : ""}
             </div>
@@ -162,10 +164,10 @@ function renderHustlePanel(state, ui) {
               <button type="button" class="icon-btn" data-action="delete-outreach" data-id="${escapeHtml(e.id)}" aria-label="Delete">${icon("trash", "h-4 w-4")}</button>
             </div>
           </div>
-          <div class="flex flex-wrap gap-1">
+          <div class="segment mt-2">
             ${STATUSES.map(
               (s) =>
-                `<button type="button" class="chip ${e.status === s ? "chip-build" : ""}" data-action="set-outreach-status" data-id="${escapeHtml(e.id)}" data-status="${s}">${s}</button>`
+                `<button type="button" class="segment-btn ${e.status === s ? "is-active accent" : ""}" data-action="set-outreach-status" data-id="${escapeHtml(e.id)}" data-status="${s}">${s}</button>`
             ).join("")}
           </div>
         </div>`
@@ -183,10 +185,14 @@ function renderHustlePanel(state, ui) {
           <p class="text-sm" style="color:var(--mute)">Monday money block is empty = no outreach = no clients.</p>
           <button type="button" class="btn btn-primary mt-3 w-full" data-action="add-outreach">Log first touch</button>
         </div>`}
+        ${renderPager(page, totalPages, "hustle")}
       </section>`;
   }
 
   return `
+    <div class="mb-3 flex justify-end">
+      <button type="button" class="btn !min-h-11 !text-xs" data-action="open-hustle-editor">Edit command center</button>
+    </div>
     <section class="panel space-y-3">
       <div class="grid grid-cols-3 gap-3">
         <div>
@@ -223,23 +229,26 @@ function renderHustlePanel(state, ui) {
 
 export function renderFreelance(state, ui) {
   const view = ui.hustleView || "fitness";
-  const simple = state.settings?.appMode !== "full";
-  const title = view === "fitness" ? "Growth" : "Command center";
-  const subtitle = view === "fitness" ? "Fitness tracker" : "Hustle";
+  const premium = Boolean(state.settings?.premiumUnlocked);
+  const title = !premium || view === "fitness" ? "Growth" : "Command center";
+  const subtitle = !premium || view === "fitness" ? "Fitness tracker" : "Hustle";
 
-  const viewToggle = simple
-    ? ""
-    : `
+  const viewToggle = premium
+    ? `
     <div class="segment mb-3" role="tablist" aria-label="Growth views">
       ${VIEW_TABS.map(
         (t) =>
           `<button type="button" class="segment-btn ${view === t.id ? "is-active accent" : ""}" data-action="hustle-view" data-view="${t.id}" role="tab" aria-selected="${view === t.id}">${t.label}</button>`
       ).join("")}
     </div>
-  `;
+  `
+    : "";
 
-  const activeView = simple ? "fitness" : view;
-  const body = activeView === "fitness" ? renderFitness(state, ui) : renderHustlePanel(state, ui);
+  const activeView = premium ? view : "fitness";
+  const body =
+    activeView === "fitness"
+      ? `${renderFitness(state, ui)}${premium ? "" : `<div class="mt-3">${renderPremiumUnlockCard()}</div>`}`
+      : renderHustlePanel(state, ui);
 
   return `
     <section class="screen">
@@ -253,7 +262,7 @@ export function renderFreelance(state, ui) {
   `;
 }
 
-export { playbook as hustlePlaybook };
+export { playbookSeed as hustlePlaybook };
 
 export function renderOutreachEditorModal(ui) {
   const draft = ui.editingOutreach || {

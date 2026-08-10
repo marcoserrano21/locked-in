@@ -2,8 +2,9 @@ import { CHALLENGE_META } from "../schedule.js";
 import { ratePerMile, totalEarnings, totalMiles } from "../uber.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
+import { paginate, renderPager } from "./Pagination.js";
 
-export function renderMiles(state) {
+export function renderMiles(state, ui = {}) {
   const miles = totalMiles(state);
   const earn = totalEarnings(state);
   const cap = state.settings.uberCap || CHALLENGE_META.uberCap;
@@ -16,10 +17,10 @@ export function renderMiles(state) {
   const overCap = miles > cap;
   const fillClass = overCap ? "danger" : overSoft ? "warn" : "";
 
-  const rows = state.uberLog
-    .slice()
-    .reverse()
-    .slice(0, 20)
+  const all = (state.uberLog || []).slice().reverse();
+  const { items: pageRows, page, totalPages } = paginate(all, ui.milesPage || 0);
+
+  const rows = pageRows
     .map(
       (e) => `
       <div class="task-row !grid-cols-[1fr_auto]">
@@ -76,6 +77,7 @@ export function renderMiles(state) {
           </button>
         </div>
         ${rows || `<p class="py-5 text-sm" style="color:var(--mute)">No sessions logged yet.</p>`}
+        ${renderPager(page, totalPages, "miles")}
       </section>
     </section>
   `;

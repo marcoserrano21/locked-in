@@ -55,20 +55,28 @@ import {
   deleteFitnessExercise,
   completeWorkout,
   deleteWorkout,
+  toggleEquipment,
+  blockExercise,
+  replaceExerciseInSession,
+  setPremiumUnlocked,
+  updateHustlePlaybook,
 } from "./store.js";
 import { startChallenge } from "./challenge.js";
 import { blocksFor, uid } from "./schedule.js";
 import { todayKey } from "./dates.js";
 import { resolveBlocksForDate } from "./work.js";
-import { activeSessionForDate } from "./fitness.js";
+import { activeSessionForDate, defaultFitnessSettings } from "./fitness.js";
+import { generateWorkoutPlan } from "./fitness-plan.js";
+import { mergePlaybook } from "./hustle-playbook.js";
 import { completionForDate } from "./streaks.js";
 import { applyTheme, cycleTheme, getStoredTheme } from "./theme.js";
 import { renderNav } from "./ui/Nav.js";
 import { renderToday } from "./ui/Today.js";
 import { renderProof } from "./ui/Proof.js";
 import { renderMiles, renderUberEditorModal } from "./ui/Miles.js";
-import { renderFreelance, hustlePlaybook, renderOutreachEditorModal } from "./ui/Freelance.js";
+import { renderFreelance, renderOutreachEditorModal } from "./ui/Freelance.js";
 import { renderAddExerciseModal, renderFitnessCelebrate } from "./ui/Fitness.js";
+import { renderWorkoutBuilderModal } from "./ui/fitness/WorkoutBuilderModal.js";
 import { renderWelcomeModal } from "./ui/Welcome.js";
 import {
   renderBlockEditorModal,
@@ -87,6 +95,8 @@ import {
 import { renderCommitModal } from "./ui/Commit.js";
 import { renderCelebrate } from "./ui/Celebrate.js";
 import { renderToast } from "./ui/Install.js";
+import { renderPremiumUnlockModal, PREMIUM_TEST_PASSWORD } from "./ui/PremiumUnlock.js";
+import { renderHustleEditorModal, makeFlowItem, makeRampWeek } from "./ui/HustleEditor.js";
 
 const app = document.getElementById("app");
 let pendingPlanAction = null;
@@ -138,7 +148,7 @@ function render() {
 
   let body = "";
   if (ui.tab === "proof") body = renderProof(state, ui);
-  else if (ui.tab === "miles") body = renderMiles(state);
+  else if (ui.tab === "miles") body = renderMiles(state, ui);
   else if (ui.tab === "freelance") body = renderFreelance(state, ui);
   else if (ui.tab === "profile") body = renderProfile(state, ui, listProfiles());
   else body = renderToday(state, ui, { canInstall: canInstallPwa });
@@ -155,6 +165,9 @@ function render() {
   else if (ui.modal === "reset-confirm") modal = renderResetConfirmModal(state);
   else if (ui.modal === "welcome") modal = renderWelcomeModal(ui);
   else if (ui.modal === "add-exercise") modal = renderAddExerciseModal(ui, state.fitnessSettings);
+  else if (ui.modal === "workout-builder") modal = renderWorkoutBuilderModal(ui, state);
+  else if (ui.modal === "premium-unlock") modal = renderPremiumUnlockModal(ui);
+  else if (ui.modal === "hustle-editor") modal = renderHustleEditorModal(state, ui);
   else if (ui.modal === "shift-sheet") modal = renderShiftSheet(ui, state);
 
   const celebrate = ui.celebrate
@@ -235,6 +248,10 @@ function clearModalState() {
     fitnessSearch: "",
     fitnessMuscle: "all",
     shiftSheetType: null,
+    replaceExercise: null,
+    openExerciseMenu: null,
+    premiumError: null,
+    selectedMuscleGroups: ui.modal === "workout-builder" ? [] : ui.selectedMuscleGroups,
   });
 }
 
@@ -272,7 +289,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "hustle-tab") {
-    setUi({ hustleTab: t.dataset.tab });
+    setUi({ hustleTab: t.dataset.tab, hustleLogPage: 0 });
     return;
   }
 
@@ -282,7 +299,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "fitness-tab") {
-    setUi({ fitnessTab: t.dataset.tab });
+    setUi({ fitnessTab: t.dataset.tab, fitnessHistoryPage: 0 });
     return;
   }
 
@@ -292,12 +309,63 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "open-workout-builder") {
+    setUi({ modal: "workout-builder", selectedMuscleGroups: [] });
+    return;
+  }
+
+  if (action === "toggle-muscle-group") {
+    const group = t.dataset.group;
+    const current = ui.selectedMuscleGroups || [];
+    const next = current.includes(group) ? current.filter((g) => g !== group) : [...current, group];
+    setUi({ selectedMuscleGroups: next });
+    return;
+  }
+
+  if (action === "save-workout-plan") {
+    const groups = ui.selectedMuscleGroups || [];
+    if (!groups.length) {
+      showToast("Pick at least one muscle group");
+      return;
+    }
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    const plan = generateWorkoutPlan({
+      selectedGroups: groups,
+      equipment: settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable,
+      log: state.fitnessLog || [],
+      blocked: settings.blockedExercises || [],
+    });
+    startWorkout();
+    const session = activeSessionForDate(state.fitnessLog);
+    if (session?.id) {
+      plan.forEach((ex) => addExerciseToSession(session.id, ex.name, ex.muscleGroup));
+    }
+    clearModalState();
+    showToast(plan.length ? `Built ${plan.length} exercises` : "No matches for your equipment");
+    return;
+  }
+
+  if (action === "open-add-exercise-empty") {
+    startWorkout();
+    const session = activeSessionForDate(state.fitnessLog);
+    setUi({
+      modal: "add-exercise",
+      fitnessAddSession: session?.id || "",
+      fitnessSearch: "",
+      fitnessMuscle: "all",
+      replaceExercise: null,
+      selectedMuscleGroups: [],
+    });
+    return;
+  }
+
   if (action === "open-add-exercise") {
     setUi({
       modal: "add-exercise",
       fitnessAddSession: t.dataset.session,
       fitnessSearch: "",
       fitnessMuscle: "all",
+      replaceExercise: null,
     });
     return;
   }
@@ -306,6 +374,121 @@ app.addEventListener("click", (event) => {
     addExerciseToSession(t.dataset.session, t.dataset.name, t.dataset.muscle || "");
     clearModalState();
     showToast("Exercise added");
+    return;
+  }
+
+  if (action === "replace-pick-exercise") {
+    const target = ui.replaceExercise;
+    if (target?.sessionId && target?.exerciseId) {
+      replaceExerciseInSession(target.sessionId, target.exerciseId, t.dataset.name, t.dataset.muscle || "");
+      clearModalState();
+      showToast("Exercise replaced");
+    }
+    return;
+  }
+
+  if (action === "open-exercise-menu") {
+    setUi({
+      openExerciseMenu: {
+        sessionId: t.dataset.session,
+        exerciseId: t.dataset.exercise,
+        setId: t.dataset.set || "",
+        name: t.dataset.name || "",
+      },
+    });
+    return;
+  }
+
+  if (action === "close-exercise-menu") {
+    setUi({ openExerciseMenu: null });
+    return;
+  }
+
+  if (action === "exercise-menu-replace") {
+    setUi({
+      openExerciseMenu: null,
+      modal: "add-exercise",
+      fitnessAddSession: t.dataset.session,
+      replaceExercise: { sessionId: t.dataset.session, exerciseId: t.dataset.exercise },
+      fitnessSearch: "",
+      fitnessMuscle: "all",
+    });
+    return;
+  }
+
+  if (action === "exercise-menu-block") {
+    const name = t.dataset.name || "";
+    blockExercise(name);
+    deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
+    setUi({ openExerciseMenu: null });
+    showToast("Won't recommend again");
+    return;
+  }
+
+  if (action === "exercise-menu-delete") {
+    if (t.dataset.set) {
+      deleteFitnessSet(t.dataset.session, t.dataset.exercise, t.dataset.set);
+    } else {
+      deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
+    }
+    setUi({ openExerciseMenu: null });
+    showToast("Deleted");
+    return;
+  }
+
+  if (action === "toggle-equipment") {
+    toggleEquipment(t.dataset.id);
+    return;
+  }
+
+  if (action === "history-page") {
+    const dir = Number(t.dataset.dir) || 0;
+    const tab = t.dataset.tab;
+    if (tab === "fitness") setUi({ fitnessHistoryPage: Math.max(0, (ui.fitnessHistoryPage || 0) + dir) });
+    else if (tab === "hustle") setUi({ hustleLogPage: Math.max(0, (ui.hustleLogPage || 0) + dir) });
+    else if (tab === "miles") setUi({ milesPage: Math.max(0, (ui.milesPage || 0) + dir) });
+    return;
+  }
+
+  if (action === "open-premium-unlock") {
+    setUi({ modal: "premium-unlock", premiumError: null });
+    return;
+  }
+
+  if (action === "open-hustle-editor") {
+    setUi({ modal: "hustle-editor", hustleEditorTab: "brief" });
+    return;
+  }
+
+  if (action === "hustle-editor-tab") {
+    setUi({ hustleEditorTab: t.dataset.tab });
+    return;
+  }
+
+  if (action === "hustle-flow-delete") {
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const weeklyFlow = [...(playbook.weeklyFlow || [])];
+    weeklyFlow.splice(Number(t.dataset.index), 1);
+    updateHustlePlaybook({ weeklyFlow });
+    return;
+  }
+
+  if (action === "hustle-flow-move") {
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const weeklyFlow = [...(playbook.weeklyFlow || [])];
+    const i = Number(t.dataset.index);
+    const j = i + Number(t.dataset.dir);
+    if (j < 0 || j >= weeklyFlow.length) return;
+    [weeklyFlow[i], weeklyFlow[j]] = [weeklyFlow[j], weeklyFlow[i]];
+    updateHustlePlaybook({ weeklyFlow });
+    return;
+  }
+
+  if (action === "hustle-ramp-delete") {
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const ramp = [...(playbook.ramp || [])];
+    ramp.splice(Number(t.dataset.index), 1);
+    updateHustlePlaybook({ ramp });
     return;
   }
 
@@ -470,11 +653,6 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "smart-start") {
-    startWorkout();
-    const session = activeSessionForDate(state.fitnessLog);
-    if (!session?.id) return;
-    addExerciseToSession(session.id, t.dataset.label, t.dataset.muscle || "");
-    showToast("Workout started");
     return;
   }
 
@@ -591,7 +769,8 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "copy-script") {
-    const text = hustlePlaybook.scripts?.[t.dataset.script] || "";
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const text = playbook.scripts?.[t.dataset.script] || "";
     if (!text) return;
     navigator.clipboard
       ?.writeText(text)
@@ -1089,13 +1268,82 @@ app.addEventListener("submit", (event) => {
     return;
   }
 
+  if (form.dataset.action === "unlock-premium") {
+    const password = form.password.value;
+    if (password === PREMIUM_TEST_PASSWORD) {
+      setPremiumUnlocked(true);
+      clearModalState();
+      setUi({ hustleView: "hustle" });
+      showToast("Premium unlocked");
+    } else {
+      setUi({ premiumError: "Wrong password. Try again." });
+    }
+    return;
+  }
+
+  if (form.dataset.action === "save-hustle-brief") {
+    updateHustlePlaybook({
+      niche: form.niche.value.trim(),
+      positioning: form.positioning.value.trim(),
+      moneyBlock: form.moneyBlock.value.trim(),
+    });
+    updateSettings({
+      portfolioUrl: form.portfolioUrl.value.trim(),
+      linkedinUrl: form.linkedinUrl.value.trim(),
+    });
+    showToast("Brief saved");
+    return;
+  }
+
+  if (form.dataset.action === "hustle-flow-add") {
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const item = makeFlowItem(form.label.value, form.detail.value);
+    if (!item.label) return;
+    updateHustlePlaybook({ weeklyFlow: [...(playbook.weeklyFlow || []), item] });
+    form.reset();
+    showToast("Flow item added");
+    return;
+  }
+
+  if (form.dataset.action === "hustle-ramp-add") {
+    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const items = String(form.items.value || "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const week = makeRampWeek(form.label.value, items);
+    if (!week.label || !week.items.length) return;
+    updateHustlePlaybook({ ramp: [...(playbook.ramp || []), week] });
+    form.reset();
+    showToast("Ramp week added");
+    return;
+  }
+
+  if (form.dataset.action === "save-hustle-scripts") {
+    updateHustlePlaybook({
+      scripts: {
+        warmDm: form.warmDm.value,
+        contraHeadline: form.contraHeadline.value,
+        socialPost: form.socialPost.value,
+        discoveryOpener: form.discoveryOpener.value,
+      },
+    });
+    showToast("Scripts saved");
+    return;
+  }
+
   if (form.dataset.action === "custom-exercise") {
     const sessionId = form.sessionId.value;
     const name = form.name.value.trim();
     if (!sessionId || !name) return;
-    addExerciseToSession(sessionId, name);
+    const replacing = ui.replaceExercise;
+    if (replacing?.sessionId && replacing?.exerciseId) {
+      replaceExerciseInSession(replacing.sessionId, replacing.exerciseId, name);
+    } else {
+      addExerciseToSession(sessionId, name);
+    }
     clearModalState();
-    showToast("Exercise added");
+    showToast(replacing ? "Exercise replaced" : "Exercise added");
   }
 });
 

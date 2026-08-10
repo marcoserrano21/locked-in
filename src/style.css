@@ -771,7 +771,15 @@ body {
 
   .sealed-card {
     text-align: center;
-    padding: 0.5rem 0;
+    padding: 1.25rem 1rem 1.5rem;
+  }
+
+  .sealed-actions {
+    padding: 0 0.25rem;
+    margin-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .sealed-stamp {
@@ -787,7 +795,7 @@ body {
     font-weight: 700;
     font-size: 0.75rem;
     letter-spacing: 0.08em;
-    animation: stamp-in 0.4s cubic-bezier(0.16, 1, 0.3,  1);
+    animation: stamp-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .muscle-thumb {
@@ -797,6 +805,160 @@ body {
     background: var(--bg-elev);
     flex-shrink: 0;
     overflow: hidden;
+  }
+
+  .muscle-thumb-lg {
+    width: 4.75rem;
+    height: 4.75rem;
+    border-radius: 1rem;
+  }
+
+  .muscle-section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 0.75rem;
+  }
+
+  .muscle-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .muscle-pick-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.75rem 0.4rem 0.65rem;
+    border-radius: 1rem;
+    background: var(--bg-elev);
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+    text-align: center;
+  }
+
+  .muscle-pick-cell.is-selected {
+    background: color-mix(in srgb, var(--build) 18%, var(--surface-2));
+  }
+
+  .muscle-pick-icon {
+    width: 4.75rem;
+    height: 4.75rem;
+    border-radius: 0.85rem;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .muscle-pick-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .muscle-pick-hint {
+    font-size: 0.65rem;
+    color: var(--mute);
+  }
+
+  .muscle-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .muscle-filter-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.25rem;
+    border-radius: 0.85rem;
+    background: var(--bg-elev);
+    cursor: pointer;
+    min-height: 4.5rem;
+  }
+
+  .muscle-filter-cell .muscle-thumb {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .muscle-filter-cell.is-selected {
+    background: color-mix(in srgb, var(--build) 16%, var(--surface-2));
+  }
+
+  .muscle-filter-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.15;
+    color: var(--text-soft);
+  }
+
+  .exercise-pick-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 5.5rem;
+    padding: 0.85rem 1rem;
+    border-radius: 1rem;
+    background: var(--bg-elev);
+    cursor: pointer;
+  }
+
+  .exercise-menu-backdrop {
+    align-items: flex-end;
+  }
+
+  .exercise-menu-sheet {
+    width: 100%;
+    max-width: 440px;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding: 1.25rem;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  @media (min-width: 480px) {
+    .exercise-menu-sheet {
+      border-radius: 1.5rem;
+      margin-bottom: 1rem;
+    }
+  }
+
+  .workout-builder-modal {
+    max-height: min(92dvh, 820px);
+  }
+
+  .premium-card {
+    border: 1px solid color-mix(in srgb, var(--maintain) 35%, transparent);
+  }
+
+  .equipment-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .equipment-toggle {
+    min-height: 2.75rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: var(--bg-elev);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--text-soft);
+  }
+
+  .equipment-toggle.is-on {
+    background: color-mix(in srgb, var(--build) 20%, var(--surface-2));
+    color: var(--text);
   }
 
   .tour-banner {

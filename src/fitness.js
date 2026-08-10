@@ -2,20 +2,67 @@ import exercisesSeed from "../content/exercises.seed.json";
 import { todayKey } from "./dates.js";
 import { uid } from "./schedule.js";
 
+export const EQUIPMENT_OPTIONS = [
+  { id: "barbell", label: "Barbell" },
+  { id: "dumbbell", label: "Dumbbell" },
+  { id: "cable", label: "Cable" },
+  { id: "machine", label: "Machine" },
+  { id: "bodyweight", label: "Bodyweight" },
+  { id: "kettlebell", label: "Kettlebell" },
+  { id: "smith", label: "Smith" },
+  { id: "bench", label: "Bench" },
+];
+
+export const MAIN_MUSCLE_GROUPS = [
+  { id: "abs", label: "Abs" },
+  { id: "back", label: "Back" },
+  { id: "biceps", label: "Biceps" },
+  { id: "chest", label: "Chest" },
+  { id: "glutes", label: "Glutes" },
+  { id: "hamstrings", label: "Hamstrings" },
+  { id: "quads", label: "Quadriceps" },
+  { id: "shoulders", label: "Shoulders" },
+  { id: "triceps", label: "Triceps" },
+  { id: "lower_back", label: "Lower Back" },
+];
+
+export const ACCESSORY_MUSCLE_GROUPS = [
+  { id: "calves", label: "Calves" },
+  { id: "traps", label: "Trapezius" },
+  { id: "abductors", label: "Abductors" },
+  { id: "adductors", label: "Adductors" },
+  { id: "forearms", label: "Forearms" },
+  { id: "neck", label: "Neck" },
+];
+
 export const MUSCLE_GROUPS = [
   { id: "all", label: "All" },
-  { id: "chest", label: "Chest" },
-  { id: "back", label: "Back" },
-  { id: "legs", label: "Legs" },
-  { id: "shoulders", label: "Shoulders" },
-  { id: "arms", label: "Arms" },
-  { id: "core", label: "Core" },
+  ...MAIN_MUSCLE_GROUPS,
+  ...ACCESSORY_MUSCLE_GROUPS,
 ];
+
+const LEGACY_MUSCLE_MAP = {
+  legs: "quads",
+  arms: "biceps",
+  core: "abs",
+};
+
+export function normalizeMuscleGroup(id = "") {
+  const key = String(id || "").trim().toLowerCase();
+  return LEGACY_MUSCLE_MAP[key] || key;
+}
+
+export function muscleLabel(id) {
+  const key = normalizeMuscleGroup(id);
+  return MUSCLE_GROUPS.find((g) => g.id === key)?.label || id || "General";
+}
 
 export function defaultFitnessSettings() {
   return {
     preferredUnit: "lb",
     recentExercises: [],
+    equipmentAvailable: EQUIPMENT_OPTIONS.map((e) => e.id),
+    blockedExercises: [],
   };
 }
 
@@ -117,10 +164,12 @@ export function previousPerformance(log = [], exerciseName) {
 
 export function filterExercises(query = "", muscleGroup = "all") {
   const q = String(query || "").trim().toLowerCase();
+  const group = normalizeMuscleGroup(muscleGroup);
   return exercisesSeed.filter((ex) => {
-    if (muscleGroup !== "all" && ex.muscleGroup !== muscleGroup) return false;
+    const exGroup = normalizeMuscleGroup(ex.muscleGroup);
+    if (group !== "all" && exGroup !== group) return false;
     if (!q) return true;
-    return ex.name.toLowerCase().includes(q) || ex.muscleGroup.includes(q);
+    return ex.name.toLowerCase().includes(q) || exGroup.includes(q) || muscleLabel(exGroup).toLowerCase().includes(q);
   });
 }
 
@@ -138,7 +187,7 @@ export function makeExercise(name, muscleGroup = "", unit = "lb") {
   return {
     id: uid("ex"),
     name: String(name || "").trim(),
-    muscleGroup: muscleGroup || "",
+    muscleGroup: normalizeMuscleGroup(muscleGroup) || "",
     sets: [makeSet(unit), makeSet(unit), makeSet(unit)],
   };
 }
@@ -171,48 +220,10 @@ export function musclesHitRecently(log = [], withinSessions = 3) {
   const hit = new Set();
   sessions.forEach((s) => {
     (s.exercises || []).forEach((ex) => {
-      if (ex.muscleGroup) hit.add(ex.muscleGroup);
+      if (ex.muscleGroup) hit.add(normalizeMuscleGroup(ex.muscleGroup));
     });
   });
   return hit;
-}
-
-export function suggestNextExercises(state, limit = 4) {
-  const log = state.fitnessLog || [];
-  const hit = musclesHitRecently(log, 3);
-  const allGroups = ["chest", "back", "legs", "shoulders", "arms", "core"];
-  const freshGroups = allGroups.filter((g) => !hit.has(g));
-
-  const suggestions = [];
-  const lastSession = completedSessions(log)[0];
-  if (lastSession?.exercises?.length) {
-    suggestions.push({
-      type: "repeat",
-      label: "Repeat last session",
-      exercises: lastSession.exercises.map((e) => e.name),
-    });
-  }
-
-  freshGroups.slice(0, 2).forEach((group) => {
-    const pick = exercisesSeed.find((ex) => ex.muscleGroup === group);
-    if (pick) {
-      suggestions.push({
-        type: "muscle",
-        label: `${pick.name}`,
-        muscleGroup: group,
-        hint: `${group} fresh`,
-      });
-    }
-  });
-
-  exercisesSeed.forEach((ex) => {
-    if (suggestions.length >= limit) return;
-    if (freshGroups.includes(ex.muscleGroup) && !suggestions.find((s) => s.label === ex.name)) {
-      suggestions.push({ type: "muscle", label: ex.name, muscleGroup: ex.muscleGroup, hint: "Suggested" });
-    }
-  });
-
-  return suggestions.slice(0, limit);
 }
 
 export function progressiveOverloadHint(log, exerciseName, unit = "lb") {
@@ -222,3 +233,4 @@ export function progressiveOverloadHint(log, exerciseName, unit = "lb") {
   return `Try ${nextWeight} ${prev.unit || unit} × ${prev.reps}`;
 }
 
+export { exercisesSeed };

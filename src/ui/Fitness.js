@@ -3,38 +3,39 @@ import {
   completedSessions,
   filterExercises,
   formatVolume,
-  MUSCLE_GROUPS,
+  MAIN_MUSCLE_GROUPS,
+  ACCESSORY_MUSCLE_GROUPS,
+  muscleLabel,
   previousPerformance,
   progressiveOverloadHint,
   sessionVolume,
   sessionsThisWeek,
-  suggestNextExercises,
   workoutStreak,
 } from "../fitness.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
-import { renderMuscleThumb, muscleWikiUrl } from "./MuscleMap.js";
+import { renderMuscleThumb } from "./MuscleMap.js";
+import { paginate, renderPager } from "./Pagination.js";
+import { renderExerciseMenu } from "./fitness/ExerciseMenu.js";
 
 const FITNESS_TABS = [
   { id: "today", label: "Today" },
   { id: "history", label: "History" },
 ];
 
-function muscleLabel(id) {
-  return MUSCLE_GROUPS.find((g) => g.id === id)?.label || id || "General";
-}
+const FILTER_GROUPS = [{ id: "all", label: "All" }, ...MAIN_MUSCLE_GROUPS, ...ACCESSORY_MUSCLE_GROUPS];
 
-function renderSetRow(set, exerciseId, sessionId, unit) {
+function renderSetRow(set, exercise, sessionId, unit) {
   return `
     <div class="fitness-set-row flex items-center gap-2">
-      <button type="button" class="check shrink-0 ${set.done ? "is-done" : ""}" data-action="toggle-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exerciseId)}" data-set="${escapeHtml(set.id)}" aria-label="Mark set done">
+      <button type="button" class="check shrink-0 ${set.done ? "is-done" : ""}" data-action="toggle-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Mark set done">
         ${set.done ? icon("check", "h-4 w-4") : ""}
       </button>
-      <input class="input !min-h-11 !w-16 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.weight) || ""}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exerciseId)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
+      <input class="input !min-h-11 !w-16 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.weight) || ""}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
       <span class="text-xs shrink-0" style="color:var(--mute)">${escapeHtml(set.unit || unit)}</span>
       <span class="text-xs shrink-0" style="color:var(--mute)">×</span>
-      <input class="input !min-h-11 !w-14 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.reps) || ""}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exerciseId)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />
-      <button type="button" class="icon-btn shrink-0" data-action="delete-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exerciseId)}" data-set="${escapeHtml(set.id)}" aria-label="Remove set">${icon("trash", "h-4 w-4")}</button>
+      <input class="input !min-h-11 !w-14 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.reps) || ""}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />
+      <button type="button" class="icon-btn shrink-0" data-action="open-exercise-menu" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" data-name="${escapeHtml(exercise.name)}" aria-label="More actions">${icon("more", "h-4 w-4")}</button>
     </div>
   `;
 }
@@ -45,27 +46,22 @@ function renderExerciseCard(exercise, session, settings, log) {
   const prevLine = prev
     ? `Last: ${prev.weight} ${prev.unit} × ${prev.reps}`
     : "No history yet. Set the baseline.";
-
   const overload = progressiveOverloadHint(log, exercise.name, unit);
-  const wiki = muscleWikiUrl(exercise.name);
 
   return `
     <article class="panel fitness-exercise-card">
       <div class="mb-3 flex items-start gap-3">
-        ${renderMuscleThumb(exercise.muscleGroup)}
+        ${renderMuscleThumb(exercise.muscleGroup, "lg")}
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="task-title !min-h-0">${escapeHtml(exercise.name)}</h3>
-            ${exercise.muscleGroup ? `<span class="chip">${escapeHtml(muscleLabel(exercise.muscleGroup))}</span>` : ""}
-          </div>
+          <h3 class="task-title !min-h-0">${escapeHtml(exercise.name)}</h3>
+          <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(muscleLabel(exercise.muscleGroup))}</p>
           <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(prevLine)}</p>
           ${overload ? `<p class="mt-1 text-xs" style="color:var(--build)">${escapeHtml(overload)}</p>` : ""}
-          ${wiki ? `<a class="mt-1 inline-block text-xs" style="color:var(--text-soft)" href="${escapeHtml(wiki)}" target="_blank" rel="noopener">Form guide</a>` : ""}
         </div>
-        <button type="button" class="icon-btn shrink-0" data-action="delete-fitness-exercise" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" aria-label="Remove exercise">${icon("trash", "h-4 w-4")}</button>
+        <button type="button" class="icon-btn shrink-0" data-action="open-exercise-menu" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" data-name="${escapeHtml(exercise.name)}" aria-label="Exercise menu">${icon("more", "h-4 w-4")}</button>
       </div>
       <div class="space-y-2">
-        ${(exercise.sets || []).map((set) => renderSetRow(set, exercise.id, session.id, unit)).join("")}
+        ${(exercise.sets || []).map((set) => renderSetRow(set, exercise, session.id, unit)).join("")}
       </div>
       <button type="button" class="btn mt-3 w-full !min-h-11 !text-xs" data-action="add-fitness-set" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}">
         ${icon("plus", "h-4 w-4")} Add set
@@ -83,28 +79,13 @@ function renderTodayPanel(state, ui) {
   const streak = workoutStreak(log);
 
   if (!session) {
-    const suggestions = suggestNextExercises(state, 3);
-    const smart = suggestions.length
-      ? `<div class="mt-4">
-          <p class="mb-2 text-xs font-semibold" style="color:var(--mute)">Smart picks</p>
-          <div class="flex flex-wrap gap-1">
-            ${suggestions
-              .map(
-                (s) =>
-                  `<button type="button" class="chip cursor-pointer" data-action="smart-start" data-label="${escapeHtml(s.label)}" data-muscle="${escapeHtml(s.muscleGroup || "")}">${escapeHtml(s.label)}${s.hint ? ` · ${escapeHtml(s.hint)}` : ""}</button>`
-              )
-              .join("")}
-          </div>
-        </div>`
-      : "";
     return `
       <section class="panel fitness-empty">
         <p class="eyebrow mb-1">Today</p>
         <h2 class="display text-4xl">Ready to train?</h2>
-        <p class="mt-2 text-sm" style="color:var(--mute)">Start a session, add exercises, log sets. Your last numbers show up automatically.</p>
-        ${smart}
-        <button type="button" class="btn btn-primary mt-5 w-full gap-2" data-action="start-workout">
-          ${icon("plus", "h-4 w-4")} Start workout
+        <p class="mt-2 text-sm" style="color:var(--mute)">Pick muscle groups. We build a session from your available equipment.</p>
+        <button type="button" class="btn btn-primary mt-5 w-full gap-2" data-action="open-workout-builder">
+          ${icon("plus", "h-4 w-4")} Build workout
         </button>
       </section>
     `;
@@ -143,12 +124,13 @@ function renderTodayPanel(state, ui) {
   `;
 }
 
-function renderHistoryPanel(state, settings) {
+function renderHistoryPanel(state, settings, ui) {
   const log = state.fitnessLog || [];
-  const sessions = completedSessions(log).slice(0, 30);
+  const all = completedSessions(log);
   const unit = settings.preferredUnit || "lb";
+  const { items: sessions, page, totalPages } = paginate(all, ui.fitnessHistoryPage || 0);
 
-  if (!sessions.length) {
+  if (!all.length) {
     return `
       <section class="panel text-center py-8">
         <p class="text-sm" style="color:var(--mute)">No completed workouts yet. Finish today's session to build history.</p>
@@ -175,6 +157,7 @@ function renderHistoryPanel(state, settings) {
           </div>`;
         })
         .join("")}
+      ${renderPager(page, totalPages, "fitness")}
     </section>
   `;
 }
@@ -192,12 +175,14 @@ export function renderFitness(state, ui) {
     </div>
   `;
 
-  const panel = tab === "history" ? renderHistoryPanel(state, settings) : renderTodayPanel(state, ui);
+  const panel = tab === "history" ? renderHistoryPanel(state, settings, ui) : renderTodayPanel(state, ui);
+  const menu = renderExerciseMenu(ui.openExerciseMenu);
 
   return `
     <section class="fitness-screen space-y-3">
       ${tabBar}
       ${panel}
+      ${menu}
     </section>
   `;
 }
@@ -206,20 +191,24 @@ export function renderAddExerciseModal(ui, settings) {
   const sessionId = ui.fitnessAddSession || "";
   const query = ui.fitnessSearch || "";
   const muscle = ui.fitnessMuscle || "all";
-  const unit = settings?.preferredUnit || "lb";
+  const replacing = ui.replaceExercise;
   const recent = settings?.recentExercises || [];
-  const results = filterExercises(query, muscle).slice(0, 12);
+  const results = filterExercises(query, muscle).slice(0, 16);
+  const title = replacing ? "Replace exercise" : "Add exercise";
+  const pickAction = replacing ? "replace-pick-exercise" : "pick-exercise";
 
   const recentBlock =
     recent.length && !query
       ? `
-      <div>
-        <p class="mb-2 text-xs font-semibold" style="color:var(--mute)">Recent</p>
-        <div class="flex flex-wrap gap-1">
+      <div class="space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Recent</p>
+        <div class="space-y-2">
           ${recent
             .map(
               (name) =>
-                `<button type="button" class="chip cursor-pointer" data-action="pick-exercise" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+                `<button type="button" class="exercise-pick-row w-full text-left" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(name)}">
+                  <span class="task-title !min-h-0">${escapeHtml(name)}</span>
+                </button>`
             )
             .join("")}
         </div>
@@ -227,45 +216,56 @@ export function renderAddExerciseModal(ui, settings) {
       : "";
 
   const muscleFilters = `
-    <div class="flex flex-wrap gap-1">
-      ${MUSCLE_GROUPS.map(
-        (g) =>
-          `<button type="button" class="chip ${muscle === g.id ? "chip-build" : ""}" data-action="fitness-muscle" data-muscle="${g.id}">${escapeHtml(g.label)}</button>`
-      ).join("")}
+    <div class="space-y-3">
+      <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Filter by muscle</p>
+      <div class="muscle-filter-grid">
+        ${FILTER_GROUPS.map(
+          (g) => `
+          <button type="button" class="muscle-filter-cell ${muscle === g.id ? "is-selected" : ""}" data-action="fitness-muscle" data-muscle="${g.id}">
+            ${g.id === "all" ? `<span class="text-sm font-semibold">All</span>` : `${renderMuscleThumb(g.id)}`}
+            <span class="muscle-filter-label">${escapeHtml(g.label)}</span>
+          </button>`
+        ).join("")}
+      </div>
     </div>
   `;
 
   return `
     <div class="modal-backdrop" data-action="close-modal">
-      <div class="modal-sheet modal-scroll-body fitness-modal" role="dialog" aria-modal="true" aria-label="Add exercise" data-stop>
-        <h2 class="display text-3xl">Add exercise</h2>
-        <form class="mt-3 space-y-3" data-action="search-exercise">
+      <div class="modal-sheet modal-scroll-body fitness-modal" role="dialog" aria-modal="true" aria-label="${title}" data-stop>
+        <h2 class="display text-3xl shrink-0">${title}</h2>
+        <form class="mt-5 shrink-0" data-action="search-exercise">
           <input type="hidden" name="sessionId" value="${escapeHtml(sessionId)}" />
           <input class="input" name="query" placeholder="Search exercises..." value="${escapeHtml(query)}" autocomplete="off" />
         </form>
-        ${muscleFilters}
-        ${recentBlock}
-        <div class="modal-scroll-inner scroll-touch mt-3 space-y-2">
-          ${results
-            .map(
-              (ex) => `
-            <button type="button" class="plan-row !min-h-[4.5rem] w-full text-left flex items-center gap-3" data-action="pick-exercise" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
-              ${renderMuscleThumb(ex.muscleGroup)}
-              <span class="min-w-0">
-                <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
-                <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}</p>
-              </span>
-            </button>`
-            )
-            .join("")}
+        <div class="modal-scroll-inner scroll-touch mt-5 space-y-6">
+          ${muscleFilters}
+          ${recentBlock}
+          <div class="space-y-3">
+            <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Exercises</p>
+            <div class="space-y-3">
+              ${results
+                .map(
+                  (ex) => `
+                <button type="button" class="exercise-pick-row w-full text-left flex items-center gap-4" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
+                  ${renderMuscleThumb(ex.muscleGroup, "lg")}
+                  <span class="min-w-0">
+                    <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
+                    <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}</p>
+                  </span>
+                </button>`
+                )
+                .join("") || `<p class="text-sm py-4 text-center" style="color:var(--mute)">No matches.</p>`}
+            </div>
+          </div>
         </div>
-        <form class="mt-4 space-y-2 border-t pt-4 shrink-0" style="border-color:var(--border)" data-action="custom-exercise">
+        <form class="mt-5 space-y-3 border-t pt-5 shrink-0" style="border-color:var(--rail)" data-action="custom-exercise">
           <input type="hidden" name="sessionId" value="${escapeHtml(sessionId)}" />
-          <p class="text-xs font-semibold" style="color:var(--mute)">Custom exercise</p>
+          <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Custom exercise</p>
           <input class="input" name="name" placeholder="Exercise name" required />
           <button type="submit" class="btn btn-primary w-full">Add custom</button>
         </form>
-        <button type="button" class="btn w-full mt-2" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn w-full mt-3 shrink-0" data-action="close-modal">Cancel</button>
       </div>
     </div>
   `;
@@ -279,13 +279,13 @@ export function renderFitnessCelebrate(payload) {
   return `
     <div class="celebrate" role="dialog" aria-modal="true" aria-label="Workout complete">
       <div class="celebrate-card">
-        <div class="sealed-stamp mx-auto mb-4">LIFT</div>
+        <div class="sealed-stamp mx-auto mb-3">LIFT</div>
         <p class="eyebrow" style="color:var(--build)">Workout sealed</p>
         <h2 class="display text-5xl mt-2">Progress logged.</h2>
         <p class="mt-3 text-sm" style="color:var(--mute)">
           ${count} exercise${count === 1 ? "" : "s"} · ${formatVolume(vol)} ${escapeHtml(unit)} volume
         </p>
-        <div class="mt-6 flex flex-col gap-2">
+        <div class="sealed-actions">
           <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share workout</button>
           <button type="button" class="btn w-full" data-action="dismiss-fitness-celebrate">Keep moving</button>
         </div>

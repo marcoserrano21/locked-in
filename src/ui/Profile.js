@@ -1,6 +1,7 @@
 import { challengeDayNumber } from "../challenge.js";
 import { formatDisplayDate } from "../dates.js";
 import { BACKUP_STALE_DAYS, daysSinceBackup, isBackupStale } from "../backup.js";
+import { EQUIPMENT_OPTIONS, defaultFitnessSettings } from "../fitness.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFlash } from "./Install.js";
 import { renderDay30Editor } from "./Day30Editor.js";
@@ -135,6 +136,20 @@ export function renderProfile(state, ui = {}, profiles = []) {
           </div>
           <button class="btn w-full" type="submit">Save mile limits</button>
         </form>
+      </section>
+
+      <section class="panel space-y-3">
+        <p class="eyebrow mb-0">Gym equipment</p>
+        <p class="text-xs" style="color:var(--mute)">Workout builder only suggests exercises you can do with what you have.</p>
+        <div class="equipment-grid">
+          ${(() => {
+            const available = state.fitnessSettings?.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
+            return EQUIPMENT_OPTIONS.map(
+              (eq) =>
+                `<button type="button" class="equipment-toggle ${available.includes(eq.id) ? "is-on" : ""}" data-action="toggle-equipment" data-id="${eq.id}" aria-pressed="${available.includes(eq.id)}">${escapeHtml(eq.label)}</button>`
+            ).join("");
+          })()}
+        </div>
       </section>
 
       <section class="panel space-y-3">

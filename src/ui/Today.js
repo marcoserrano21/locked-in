@@ -1,4 +1,4 @@
-import playbook from "../../content/freelance.playbook.json";
+import playbookSeed from "../../content/freelance.playbook.json";
 import { DAY_NAMES, DAY_NAMES_FULL, dayType } from "../schedule.js";
 import {
   todayKey,
@@ -16,6 +16,7 @@ import { escapeHtml, icon, renderMetaRow } from "./dom.js";
 import { renderPlan } from "./Plan.js";
 import { renderFlash, renderInstallTip } from "./Install.js";
 import { coachHints } from "../coach.js";
+import { mergePlaybook } from "../hustle-playbook.js";
 
 function findNowBlock(blocks, doneLookup, coresComplete = false) {
   const pool = coresComplete ? blocks.filter((b) => !b.soft) : blocks;
@@ -73,6 +74,7 @@ function modeToggle(todayMode) {
 }
 
 function renderCoachBanners(state) {
+  const playbook = mergePlaybook(state.settings?.hustlePlaybook) || playbookSeed;
   const hints = coachHints(state, { playbook });
   if (!hints.length) return "";
   return hints
@@ -181,14 +183,14 @@ export function renderToday(state, ui, opts = {}) {
       ${
         completion.complete && isToday
           ? `<section class="panel now-card sealed-card">
-              <div class="sealed-stamp mx-auto mb-4">SEALED</div>
+              <div class="sealed-stamp mx-auto mb-3">SEALED</div>
               <p class="eyebrow" style="color:var(--build)">Day sealed</p>
               <h2 class="display text-[2rem] leading-[1.05] mt-1">All core blocks done.</h2>
               <p class="mt-2 text-sm" style="color:var(--mute)">
                 Streak ${streak} · ${completion.doneCore}/${completion.coreCount} core locked
                 ${softRemaining ? ` · ${softRemaining} soft left` : ""}
               </p>
-              <div class="mt-4 flex flex-col gap-2">
+              <div class="sealed-actions">
                 <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share today</button>
                 <button type="button" class="btn w-full" data-action="set-tab" data-tab="proof">View Proof</button>
               </div>
