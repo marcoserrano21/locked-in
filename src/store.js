@@ -257,8 +257,11 @@ export function loadState() {
           appRoot.activeProfileId = Object.keys(appRoot.profiles)[0];
         }
         syncActiveFromRoot();
-        persist();
-        return state;
+        if (state) {
+          persist();
+          return state;
+        }
+        console.warn("Invalid v4 profile store (no active profile), reinitializing");
       }
     }
 
@@ -302,6 +305,7 @@ export function loadState() {
   profile.settings.displayName = "";
   appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
   syncActiveFromRoot();
+  persist();
   return state;
 }
 
@@ -376,6 +380,7 @@ export function deleteProfile(id) {
 }
 
 export function patchState(mutator) {
+  if (!state) return;
   state = mutator(state);
   notify();
 }

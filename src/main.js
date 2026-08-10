@@ -111,7 +111,29 @@ function showFlash(type, message) {
   setUi({ flash: { type, message }, tab: "profile" });
 }
 
+function renderBootError(message) {
+  app.innerHTML = `
+    <section class="screen p-4">
+      <p class="eyebrow" style="color:var(--danger)">Startup error</p>
+      <h1 class="display text-3xl mt-1">Could not load your track</h1>
+      <p class="mt-3 text-sm" style="color:var(--mute)">${String(message || "Unknown error").replace(/[<>&]/g, "")}</p>
+      <button type="button" class="btn btn-primary mt-5 w-full" id="boot-reset">Clear saved data & reload</button>
+    </section>`;
+  document.getElementById("boot-reset")?.addEventListener("click", () => {
+    localStorage.removeItem("marco-tracker-v4");
+    localStorage.removeItem("marco-tracker-v3");
+    localStorage.removeItem("marco-tracker-v2");
+    localStorage.removeItem("marco-tracker-v1");
+    location.reload();
+  });
+}
+
 function render() {
+  if (!state) {
+    renderBootError("Saved profile data is missing or corrupt.");
+    return;
+  }
+  try {
   const needsCommit = !state.challenge?.startDate && ui.modal !== "welcome" && !needsWelcome;
 
   let body = "";
@@ -149,6 +171,10 @@ function render() {
     ${celebrate}
     ${toast}
   `;
+  } catch (error) {
+    console.error("render failed", error);
+    renderBootError(error?.message || "Render failed");
+  }
 }
 
 function withPlanFriction(action) {
@@ -1075,11 +1101,11 @@ app.addEventListener("submit", (event) => {
 
 applyTheme(getStoredTheme(), { force: true });
 loadState();
-if (state.settings?.theme) applyTheme(state.settings.theme, { force: true });
+if (state?.settings?.theme) applyTheme(state.settings.theme, { force: true });
 resetToTodayUi();
 setUi({
   tab: "today",
-  theme: state.settings?.theme || getStoredTheme(),
+  theme: state?.settings?.theme || getStoredTheme(),
   hustleView: "fitness",
   fitnessTab: "today",
   ...(needsWelcome ? { modal: "welcome", welcomeStep: 1 } : {}),
