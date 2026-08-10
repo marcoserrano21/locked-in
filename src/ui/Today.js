@@ -17,11 +17,15 @@ import { renderPlan } from "./Plan.js";
 import { renderFlash, renderInstallTip } from "./Install.js";
 import { coachHints } from "../coach.js";
 
-function findNowBlock(blocks, doneLookup) {
+function findNowBlock(blocks, doneLookup, coresComplete = false) {
+  const pool = coresComplete ? blocks.filter((b) => !b.soft) : blocks;
+  if (coresComplete && pool.every((b) => doneLookup[b.id])) {
+    return { focus: null, mode: "sealed" };
+  }
   const mins = nowMinutes();
   let current = null;
   let next = null;
-  for (const b of blocks) {
+  for (const b of pool) {
     const start = parseTimeToMinutes(b.time);
     if (start == null) continue;
     if (start <= mins) current = b;
@@ -30,8 +34,8 @@ function findNowBlock(blocks, doneLookup) {
   const focus =
     (current && !doneLookup[current.id] && current) ||
     next ||
-    blocks.find((b) => !doneLookup[b.id]) ||
-    blocks[0];
+    pool.find((b) => !doneLookup[b.id]) ||
+    pool[0];
   const mode =
     current && focus?.id === current.id && !doneLookup[current.id]
       ? "now"
@@ -39,6 +43,24 @@ function findNowBlock(blocks, doneLookup) {
         ? "next"
         : "focus";
   return { focus, mode };
+}
+
+function renderTourBanner(state) {
+  const s = state.settings || {};
+  if (s.tourCompleted) return "";
+  const step = Number(s.tourStep || 0);
+  const tips = [
+    { title: "Your next block lives here", body: "Tap to check it off. Core blocks build your streak." },
+    { title: "Edit builds your week", body: "Use Shifts for work days and Week templates for your rhythm." },
+    { title: "Install keeps your track", body: "Add to home screen so your data stays on this device." },
+  ];
+  const tip = tips[step] || tips[0];
+  return `
+    <div class="tour-banner mb-3 flex flex-col gap-2" role="status">
+      <p class="text-sm font-semibold">${escapeHtml(tip.title)}</p>
+      <p class="text-xs" style="color:var(--mute)">${escapeHtml(tip.body)}</p>
+      <button type="button" class="btn btn-primary w-full !min-h-11" data-action="tour-next">${step >= 2 ? "Got it" : "Next tip"}</button>
+    </div>`;
 }
 
 function modeToggle(todayMode) {
@@ -105,7 +127,8 @@ export function renderToday(state, ui, opts = {}) {
   const streak = computeStreak(state);
   const type = dayType(selectedDay);
   const doneLookup = state.completions?.[selectedDate] || {};
-  const { focus, mode } = findNowBlock(blocks, doneLookup);
+  const { focus, mode } = findNowBlock(blocks, doneLookup, completion.complete);
+  const softRemaining = blocks.filter((b) => b.soft && !doneLookup[b.id]).length;
   const override = state.workOverrides?.[selectedDate];
   const pct = completion.coreCount ? Math.round((completion.doneCore / completion.coreCount) * 100) : 0;
   const events = upcomingEvents(state, todayKey(), 21)
@@ -121,7 +144,7 @@ export function renderToday(state, ui, opts = {}) {
       const active = key === selectedDate;
       const sealed = c.complete;
       return `
-        <button type="button" class="pill-day ${dayType(dow)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}" aria-pressed="${active}">
+        <button type="button" class="pill-day snap-start shrink-0 ${dayType(dow)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}" aria-pressed="${active}">
           <span class="block text-[10px] font-semibold">${DAY_NAMES[dow]}</span>
           <span class="block text-[11px]">${formatDisplayDate(key).slice(0, 5)}</span>
         </button>`;
@@ -152,9 +175,25 @@ export function renderToday(state, ui, opts = {}) {
 
       ${modeToggle(todayMode)}
       ${renderFlash(ui.flash)}
+      ${isToday && !state.settings?.tourCompleted ? renderTourBanner(state) : ""}
       ${isToday ? renderCoachBanners(state) : ""}
 
-      <section class="panel now-card">
+      ${
+        completion.complete && isToday
+          ? `<section class="panel now-card sealed-card">
+              <div class="sealed-stamp mx-auto mb-4">SEALED</div>
+              <p class="eyebrow" style="color:var(--build)">Day sealed</p>
+              <h2 class="display text-[2rem] leading-[1.05] mt-1">All core blocks done.</h2>
+              <p class="mt-2 text-sm" style="color:var(--mute)">
+                Streak ${streak} · ${completion.doneCore}/${completion.coreCount} core locked
+                ${softRemaining ? ` · ${softRemaining} soft left` : ""}
+              </p>
+              <div class="mt-4 flex flex-col gap-2">
+                <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share today</button>
+                <button type="button" class="btn w-full" data-action="set-tab" data-tab="proof">View Proof</button>
+              </div>
+            </section>`
+          : `<section class="panel now-card">
         <div class="mb-2 flex items-center justify-between gap-2">
           <p class="eyebrow mb-0">${mode === "now" ? "Now" : mode === "next" ? "Up next" : "Focus"}</p>
           <div class="flex gap-1">
@@ -170,9 +209,9 @@ export function renderToday(state, ui, opts = {}) {
           ${focus && doneLookup[focus.id] ? "Done - tap to undo" : "Check this block"}
         </button>
         ${!canEdit ? `<p class="mt-2 text-xs" style="color:var(--mute)">Preview only. Checking works for today and yesterday catch-up.</p>` : ""}
-        ${completion.complete ? `<p class="mt-3 text-sm" style="color:var(--build)">Day sealed. Soft targets can wait.</p>` : ""}
         ${!focus ? `<button type="button" class="btn mt-3 w-full" data-action="today-mode" data-mode="edit">Open Edit to add blocks</button>` : ""}
-      </section>
+      </section>`
+      }
 
       <section class="panel">
         <div class="mb-2 flex items-start justify-between gap-2">
@@ -187,7 +226,7 @@ export function renderToday(state, ui, opts = {}) {
           </div>
         </div>
         <div class="day-rail mb-3"><div class="day-rail-fill" style="width:${pct}%"></div></div>
-        <div class="mb-1 flex gap-1.5" role="group" aria-label="This week">${pills}</div>
+        <div class="mb-1 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory" role="group" aria-label="This week">${pills}</div>
         <div>${
           list ||
           `<div class="py-4 text-center">

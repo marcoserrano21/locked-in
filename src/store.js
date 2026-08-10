@@ -2,6 +2,7 @@ import { cloneSeedSchedule, CHALLENGE_META, uid } from "./schedule.js";
 import { todayKey } from "./dates.js";
 import eventsSeed from "../content/events.seed.json";
 import { validateBackupText } from "./backup.js";
+import { BLANK_DAY30 } from "./constants.js";
 import {
   activeSessionForDate,
   defaultFitnessSettings,
@@ -85,6 +86,10 @@ function defaultProfileData() {
       lastBackupAt: null,
       installTipDismissed: false,
       challengeLength: 30,
+      appMode: "full",
+      tourStep: 0,
+      tourCompleted: false,
+      modulesUnlocked: { proof: true, miles: true },
     },
   };
 }
@@ -103,6 +108,7 @@ function blankProfileData(displayName = "New track") {
     celebrations: {},
     hustleChecks: {},
     day30Answers: {},
+    day30Questions: [...BLANK_DAY30],
     scheduleEdits: [],
     fitnessLog: [],
     fitnessSettings: defaultFitnessSettings(),
@@ -113,6 +119,10 @@ function blankProfileData(displayName = "New track") {
       portfolioUrl: "",
       linkedinUrl: "",
       challengeLength: 30,
+      appMode: "simple",
+      tourStep: 0,
+      tourCompleted: false,
+      modulesUnlocked: { proof: false, miles: false },
     },
   };
 }
@@ -610,6 +620,75 @@ export function setDay30Questions(questions) {
   }));
 }
 
+export function addDay30Question(text) {
+  const q = String(text || "").trim();
+  if (!q) return;
+  patchState((s) => {
+    const list = [...(s.day30Questions || [])];
+    if (list.length >= 12) return s;
+    return { ...s, day30Questions: [...list, q] };
+  });
+}
+
+export function removeDay30Question(index) {
+  patchState((s) => {
+    const list = [...(s.day30Questions || [])];
+    list.splice(Number(index), 1);
+    return { ...s, day30Questions: list };
+  });
+}
+
+export function reorderDay30Question(index, dir) {
+  patchState((s) => {
+    const list = [...(s.day30Questions || [])];
+    const i = Number(index);
+    const j = i + Number(dir);
+    if (j < 0 || j >= list.length) return s;
+    [list[i], list[j]] = [list[j], list[i]];
+    return { ...s, day30Questions: list };
+  });
+}
+
+export function setAppMode(mode) {
+  const appMode = mode === "full" ? "full" : "simple";
+  patchState((s) => ({
+    ...s,
+    settings: {
+      ...s.settings,
+      appMode,
+      modulesUnlocked:
+        appMode === "full"
+          ? { proof: true, miles: true }
+          : s.settings?.modulesUnlocked || { proof: false, miles: false },
+    },
+  }));
+}
+
+export function advanceTour() {
+  patchState((s) => {
+    const step = Number(s.settings?.tourStep || 0) + 1;
+    const done = step >= 3;
+    return {
+      ...s,
+      settings: {
+        ...s.settings,
+        tourStep: done ? 3 : step,
+        tourCompleted: done,
+      },
+    };
+  });
+}
+
+export function unlockModule(name) {
+  patchState((s) => ({
+    ...s,
+    settings: {
+      ...s.settings,
+      modulesUnlocked: { ...(s.settings?.modulesUnlocked || {}), [name]: true },
+    },
+  }));
+}
+
 export function setDay30Answer(questionId, answer) {
   patchState((s) => ({
     ...s,
@@ -636,6 +715,16 @@ export function completeWelcome(displayName, focus = "both") {
   const tab =
     focus === "fitness" ? "freelance" : focus === "schedule" ? "today" : "today";
   const hustleView = focus === "fitness" || focus === "both" ? "fitness" : "hustle";
+  patchState((s) => ({
+    ...s,
+    settings: {
+      ...s.settings,
+      appMode: focus === "schedule" ? "simple" : focus === "fitness" ? "simple" : "simple",
+      tourStep: 0,
+      tourCompleted: false,
+      modulesUnlocked: { proof: false, miles: false },
+    },
+  }));
   setUi({
     modal: null,
     welcomeStep: 1,

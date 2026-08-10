@@ -3,6 +3,7 @@ import { formatDisplayDate } from "../dates.js";
 import { BACKUP_STALE_DAYS, daysSinceBackup, isBackupStale } from "../backup.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFlash } from "./Install.js";
+import { renderDay30Editor } from "./Day30Editor.js";
 
 const THEMES = [
   { id: "dark", label: "dark" },
@@ -23,7 +24,6 @@ export function renderProfile(state, ui = {}, profiles = []) {
     ? formatDisplayDate(s.lastBackupAt.slice(0, 10))
     : "never";
   const lengthChoice = Number(s.challengeLength || length || 30);
-  const questions = (state.day30Questions || []).join("\n");
   const canDelete = profiles.length > 1;
 
   const profileRows = profiles
@@ -107,10 +107,21 @@ export function renderProfile(state, ui = {}, profiles = []) {
             ).join("")}
           </div>
         </div>
-        <label class="flex min-h-tap items-center justify-between gap-3 text-sm">
-          <span>Yesterday catch-up</span>
-          <input type="checkbox" data-action="toggle-catchup" ${s.yesterdayCatchUp !== false ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-label="Yesterday catch-up" />
+        <label class="flex min-h-tap flex-col gap-2 text-sm">
+          <span class="flex items-center justify-between gap-3">
+            <span id="catchup-label">Yesterday catch-up</span>
+            <input type="checkbox" data-action="toggle-catchup" ${s.yesterdayCatchUp !== false ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="catchup-label" aria-describedby="catchup-help" />
+          </span>
+          <span id="catchup-help" class="text-xs" style="color:var(--mute)">Lets you check off yesterday's core blocks until midnight tonight. Good for late finishes. Does not change streak rules; today is still the main track.</span>
         </label>
+        <div>
+          <p class="mb-2 text-xs" style="color:var(--mute)">App mode</p>
+          <div class="segment" role="group" aria-label="App mode">
+            <button type="button" class="segment-btn ${(s.appMode || "simple") === "simple" ? "is-active accent" : ""}" data-action="set-app-mode" data-mode="simple">Simple</button>
+            <button type="button" class="segment-btn ${s.appMode === "full" ? "is-active accent" : ""}" data-action="set-app-mode" data-mode="full">Full</button>
+          </div>
+          <p class="mt-2 text-xs" style="color:var(--mute)">Simple hides Proof and Miles until you unlock them or switch to Full.</p>
+        </div>
         <form class="space-y-2" data-action="profile-miles">
           <div class="flex gap-2">
             <div class="flex-1">
@@ -146,12 +157,9 @@ export function renderProfile(state, ui = {}, profiles = []) {
               .join("")}
           </div>
         </div>
-        <form class="space-y-2" data-action="profile-day30-questions">
-          <label class="mb-1 block text-xs" style="color:var(--mute)" for="day30-qs">Day 30 questions (one per line)</label>
-          <textarea class="input min-h-[120px] py-3" id="day30-qs" name="questions">${escapeHtml(questions)}</textarea>
-          <button class="btn w-full" type="submit">Save review questions</button>
-        </form>
       </section>
+
+      ${renderDay30Editor(state)}
 
       <section class="panel space-y-2">
         <p class="eyebrow">Data</p>

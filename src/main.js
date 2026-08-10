@@ -37,6 +37,12 @@ import {
   deleteProfile,
   setChallengeLength,
   setDay30Questions,
+  addDay30Question,
+  removeDay30Question,
+  reorderDay30Question,
+  setAppMode,
+  advanceTour,
+  unlockModule,
   needsWelcome,
   completeWelcome,
   loadMarcoDemo,
@@ -54,6 +60,7 @@ import { startChallenge } from "./challenge.js";
 import { blocksFor, uid } from "./schedule.js";
 import { todayKey } from "./dates.js";
 import { resolveBlocksForDate } from "./work.js";
+import { activeSessionForDate } from "./fitness.js";
 import { completionForDate } from "./streaks.js";
 import { applyTheme, cycleTheme, getStoredTheme } from "./theme.js";
 import { renderNav } from "./ui/Nav.js";
@@ -68,7 +75,9 @@ import {
   renderEventEditorModal,
   renderEditConfirmModal,
   createBlockFromForm,
+  renderShiftSheet,
 } from "./ui/Plan.js";
+import { shareProgress } from "./share.js";
 import {
   renderProfile,
   renderResetConfirmModal,
@@ -124,17 +133,18 @@ function render() {
   else if (ui.modal === "reset-confirm") modal = renderResetConfirmModal(state);
   else if (ui.modal === "welcome") modal = renderWelcomeModal(ui);
   else if (ui.modal === "add-exercise") modal = renderAddExerciseModal(ui, state.fitnessSettings);
+  else if (ui.modal === "shift-sheet") modal = renderShiftSheet(ui, state);
 
   const celebrate = ui.celebrate
     ? ui.celebrate.type === "fitness"
       ? renderFitnessCelebrate(ui.celebrate)
-      : renderCelebrate(ui.celebrate)
+      : renderCelebrate(ui.celebrate, state)
     : "";
   const toast = renderToast(ui.toast);
 
   app.innerHTML = `
     ${body}
-    ${needsCommit ? "" : renderNav(ui.tab)}
+    ${needsCommit ? "" : renderNav(ui.tab, state)}
     ${modal}
     ${celebrate}
     ${toast}
@@ -198,6 +208,7 @@ function clearModalState() {
     fitnessAddSession: null,
     fitnessSearch: "",
     fitnessMuscle: "all",
+    shiftSheetType: null,
   });
 }
 
@@ -374,7 +385,70 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "pick-shift-day") {
-    setUi({ overrideDate: t.dataset.date, planMode: "shifts" });
+    const date = t.dataset.date;
+    const ov = state.workOverrides?.[date];
+    setUi({
+      overrideDate: date,
+      planMode: "shifts",
+      modal: "shift-sheet",
+      shiftSheetDate: date,
+      shiftSheetType: ov?.type || "work",
+    });
+    return;
+  }
+
+  if (action === "open-shift-sheet") {
+    const date = t.dataset.date;
+    const ov = state.workOverrides?.[date];
+    setUi({
+      modal: "shift-sheet",
+      shiftSheetDate: date,
+      overrideDate: date,
+      shiftSheetType: ov?.type || "work",
+    });
+    return;
+  }
+
+  if (action === "shift-type-pick") {
+    setUi({ shiftSheetType: t.dataset.type });
+    return;
+  }
+
+  if (action === "share-progress") {
+    shareProgress(state, t.dataset.scope || "day", ui.selectedDate || todayKey())
+      .then((r) => showToast(r.method === "clipboard" ? "Copied to clipboard" : "Shared"))
+      .catch(() => showToast("Share cancelled"));
+    return;
+  }
+
+  if (action === "tour-next") {
+    advanceTour();
+    return;
+  }
+
+  if (action === "set-app-mode") {
+    setAppMode(t.dataset.mode);
+    showToast(t.dataset.mode === "full" ? "Full app unlocked" : "Simple mode on");
+    return;
+  }
+
+  if (action === "day30-delete") {
+    removeDay30Question(t.dataset.index);
+    showToast("Question removed");
+    return;
+  }
+
+  if (action === "day30-move") {
+    reorderDay30Question(t.dataset.index, t.dataset.dir);
+    return;
+  }
+
+  if (action === "smart-start") {
+    startWorkout();
+    const session = activeSessionForDate(state.fitnessLog);
+    if (!session?.id) return;
+    addExerciseToSession(session.id, t.dataset.label, t.dataset.muscle || "");
+    showToast("Workout started");
     return;
   }
 
@@ -521,7 +595,12 @@ app.addEventListener("click", (event) => {
     const date = t.dataset.date;
     const id = t.dataset.id;
     if (!id) return;
+    const wasDone = Boolean(state.completions?.[date]?.[id]);
     toggleBlock(date, id);
+    if (!wasDone && !state.settings?.modulesUnlocked?.proof) {
+      const block = resolveBlocksForDate(state, date).find((b) => b.id === id);
+      if (block && !block.soft) unlockModule("proof");
+    }
     maybeCelebrate(date);
     return;
   }
@@ -873,6 +952,15 @@ app.addEventListener("submit", (event) => {
       linkedinUrl: form.linkedinUrl.value.trim(),
     });
     showToast("Identity saved");
+    return;
+  }
+
+  if (form.dataset.action === "day30-add") {
+    const q = form.question.value.trim();
+    if (!q) return;
+    addDay30Question(q);
+    form.reset();
+    showToast("Question added");
     return;
   }
 
