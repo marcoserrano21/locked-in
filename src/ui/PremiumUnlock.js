@@ -17,7 +17,7 @@ export function renderPremiumUnlockCard() {
 export function renderPremiumUnlockModal(ui) {
   const err = ui.premiumError ? `<p class="text-xs mt-2" style="color:var(--danger)">${escapeHtml(ui.premiumError)}</p>` : "";
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Unlock Premium" data-stop>
         <p class="eyebrow" style="color:var(--maintain)">Premium preview</p>
         <h2 class="display text-3xl mt-1">Enter access code</h2>

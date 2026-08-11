@@ -1,6 +1,7 @@
 import { challengeDayNumber } from "../challenge.js";
 import { formatDisplayDate } from "../dates.js";
 import { BACKUP_STALE_DAYS, daysSinceBackup, isBackupStale } from "../backup.js";
+import { MAX_PROFILES } from "../store.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFlash } from "./Install.js";
 import { renderDay30Editor } from "./Day30Editor.js";
@@ -28,6 +29,10 @@ export function renderProfile(state, ui = {}, profiles = []) {
   const premium = Boolean(s.premiumUnlocked);
   const isCustomLength = ![7, 14, 30, 90].includes(lengthChoice);
   const canDelete = profiles.length > 1;
+  const atProfileCap = profiles.length >= MAX_PROFILES;
+  const challengeOpen = ui.profileChallengeOpen !== false;
+  const day30Open =
+    ui.profileDay30Open != null ? Boolean(ui.profileDay30Open) : dayNum >= 21;
 
   const profileRows = profiles
     .map(
@@ -70,8 +75,12 @@ export function renderProfile(state, ui = {}, profiles = []) {
         <p class="eyebrow">On-device profiles</p>
         <div class="space-y-2">${profileRows || `<p class="text-sm" style="color:var(--mute)">One profile loaded.</p>`}</div>
         <div class="flex flex-wrap gap-2 pt-1">
-          <button type="button" class="btn btn-primary flex-1" data-action="create-profile" data-kind="blank">Add blank</button>
-          <button type="button" class="btn flex-1" data-action="create-profile" data-kind="marco">Add Marco preset</button>
+          ${
+            atProfileCap
+              ? `<p class="text-xs w-full" style="color:var(--mute)">${profiles.length}/${MAX_PROFILES} profiles — remove one to add another.</p>`
+              : `<button type="button" class="btn btn-primary flex-1" data-action="create-profile" data-kind="blank">Add blank</button>
+          <button type="button" class="btn flex-1" data-action="create-profile" data-kind="marco">Add Marco preset</button>`
+          }
         </div>
         <p class="text-xs" style="color:var(--mute)">Your data stays on this device. Share the link; each person gets their own track. Export JSON to backup or move devices.</p>
       </section>
@@ -163,15 +172,25 @@ export function renderProfile(state, ui = {}, profiles = []) {
       </section>
 
       <section class="panel space-y-3">
-        <p class="eyebrow mb-0">Challenge</p>
-        <div class="flex items-end justify-between gap-3">
+        <button type="button" class="review-head w-full !px-0" data-action="toggle-profile-challenge" aria-expanded="${challengeOpen}">
+          <div class="min-w-0 text-left">
+            <p class="eyebrow mb-0">Challenge</p>
+            <p class="mt-1 text-xs" style="color:var(--mute)">${dayNum}/${length} · ${escapeHtml(status)}</p>
+          </div>
+          <span class="chevron-rot ${challengeOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
+        </button>
+        <div class="day30-body ${challengeOpen ? "is-open" : ""}">
+          ${
+            challengeOpen
+              ? `
+        <div class="flex items-end justify-between gap-3 mt-2">
           <div>
             <p class="display text-4xl" style="color:var(--build)">${dayNum}/${length}</p>
             <p class="mt-1 text-sm" style="color:var(--mute)">Status: ${escapeHtml(status)}</p>
           </div>
           <p class="text-sm" style="color:var(--text-soft)">${start ? `Started ${formatDisplayDate(start)}` : "Not started"}</p>
         </div>
-        <div>
+        <div class="mt-3">
           <p class="mb-2 text-xs" style="color:var(--mute)">Length</p>
           <div class="segment" role="group" aria-label="Challenge length">
             ${[7, 14, 30]
@@ -195,10 +214,24 @@ export function renderProfile(state, ui = {}, profiles = []) {
           </form>`
               : ""
           }
+        </div>`
+              : ""
+          }
         </div>
       </section>
 
-      ${renderDay30Editor(state)}
+      <section class="panel space-y-2">
+        <button type="button" class="review-head w-full !px-0" data-action="toggle-profile-day30" aria-expanded="${day30Open}">
+          <div class="min-w-0 text-left">
+            <p class="eyebrow mb-0">Day 30 review</p>
+            <p class="mt-1 text-xs" style="color:var(--mute)">Edit questions · answer on Proof</p>
+          </div>
+          <span class="chevron-rot ${day30Open ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
+        </button>
+        <div class="day30-body ${day30Open ? "is-open" : ""}">
+          ${day30Open ? renderDay30Editor(state, { embedded: true }) : ""}
+        </div>
+      </section>
 
       <section class="panel space-y-2">
         <p class="eyebrow">Data</p>
@@ -236,7 +269,7 @@ export function renderProfileEditorModal(ui, profiles = []) {
   const draft = ui.editingProfile || { id: "", displayName: "" };
   const meta = profiles.find((p) => p.id === draft.id);
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Edit profile" data-stop>
         <h2 class="display text-3xl">Edit profile</h2>
         <p class="mt-1 text-sm" style="color:var(--mute)">${escapeHtml(meta?.preset || "local")} track · on-device only</p>
@@ -259,7 +292,7 @@ export function renderProfileEditorModal(ui, profiles = []) {
 export function renderDeleteProfileModal(ui) {
   const draft = ui.deletingProfile || { id: "", displayName: "" };
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Remove profile" data-stop>
         <h2 class="display text-3xl">Remove profile?</h2>
         <p class="mt-2 text-sm" style="color:var(--mute)">
@@ -277,7 +310,7 @@ export function renderDeleteProfileModal(ui) {
 export function renderResetConfirmModal(state) {
   const stale = isBackupStale(state?.settings?.lastBackupAt);
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Confirm reset" data-stop tabindex="-1">
         <h2 class="display text-3xl">Reset everything?</h2>
         <p class="mt-2 text-sm" style="color:var(--mute)">This clears streak history, miles, hustle checks, and Day 30 answers on this device.</p>
@@ -297,7 +330,7 @@ export function renderResetConfirmModal(state) {
 export function renderRestartOnboardingModal(state) {
   const stale = isBackupStale(state?.settings?.lastBackupAt);
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Restart from onboarding" data-stop>
         <h2 class="display text-3xl">Start from onboarding?</h2>
         <p class="mt-2 text-sm" style="color:var(--mute)">

@@ -5,21 +5,25 @@ import {
   yesterdayKey,
   nowMinutes,
   parseTimeToMinutes,
-  weekDates,
   formatDisplayDate,
-  daysBetween,
+  dateKey,
+  addDays,
+  parseDateKey,
 } from "../dates.js";
 import { challengeDayNumber } from "../challenge.js";
 import { computeStreak, completionForDate, isDone } from "../streaks.js";
-import { describeOverride, resolveBlocksForDate, upcomingEvents } from "../work.js";
-import { escapeHtml, icon, renderMetaRow } from "./dom.js";
-import { renderScheduleTimeline } from "./plan/ScheduleTimeline.js";
+import { describeOverride, resolveBlocksForDate } from "../work.js";
+import { escapeHtml, icon, tagChips } from "./dom.js";
+import { formatTimeShort } from "./plan/ScheduleTimeline.js";
 import { renderPlan } from "./Plan.js";
 import { renderFlash, renderInstallTip } from "./Install.js";
 import { coachHints } from "../coach.js";
 import { mergePlaybook } from "../hustle-playbook.js";
 import { isBackupStale, daysSinceBackup, BACKUP_STALE_DAYS } from "../backup.js";
 import { copy } from "../copy/voice.js";
+import { renderDateField } from "./DatePicker.js";
+
+const AT_RISK_HOUR = 18; // 6pm local
 
 function findNowBlock(blocks, doneLookup, coresComplete = false) {
   const pool = coresComplete ? blocks.filter((b) => !b.soft) : blocks;
@@ -49,23 +53,23 @@ function findNowBlock(blocks, doneLookup, coresComplete = false) {
   return { focus, mode };
 }
 
-function modeToggle(todayMode) {
-  return `
-    <div class="segment" role="tablist" aria-label="Today mode">
-      <button type="button" class="segment-btn accent ${todayMode === "track" ? "is-active" : ""}" data-action="today-mode" data-mode="track" role="tab" aria-selected="${todayMode === "track"}">Track</button>
-      <button type="button" class="segment-btn accent ${todayMode === "edit" ? "is-active" : ""}" data-action="today-mode" data-mode="edit" role="tab" aria-selected="${todayMode === "edit"}">Edit</button>
-    </div>
-  `;
+function isAtRisk(blocks, doneLookup, completion, isToday) {
+  if (!isToday || completion.complete || !completion.coreCount) return false;
+  const mins = nowMinutes();
+  if (mins >= AT_RISK_HOUR * 60) return true;
+  const incompleteCores = blocks.filter((b) => !b.soft && !doneLookup[b.id]);
+  if (!incompleteCores.length) return false;
+  const lastStart = Math.max(
+    ...incompleteCores.map((b) => parseTimeToMinutes(b.time)).filter((n) => n != null)
+  );
+  return Number.isFinite(lastStart) && mins >= lastStart;
 }
 
-function viewToggle(todayView) {
-  const view = todayView === "timeline" ? "timeline" : "list";
-  return `
-    <div class="segment !mt-0" role="tablist" aria-label="Block layout">
-      <button type="button" class="segment-btn ${view === "list" ? "is-active accent" : ""}" data-action="today-view" data-view="list" role="tab" aria-selected="${view === "list"}">List</button>
-      <button type="button" class="segment-btn ${view === "timeline" ? "is-active accent" : ""}" data-action="today-view" data-view="timeline" role="tab" aria-selected="${view === "timeline"}">Timeline</button>
-    </div>
-  `;
+function editToggleBtn(todayMode) {
+  if (todayMode === "edit") {
+    return `<button type="button" class="icon-btn shrink-0" data-action="today-mode" data-mode="track" aria-label="Back to Track">${icon("check", "h-5 w-5")}</button>`;
+  }
+  return `<button type="button" class="icon-btn shrink-0" data-action="today-mode" data-mode="edit" aria-label="Edit schedule">${icon("edit", "h-5 w-5")}</button>`;
 }
 
 function renderCoachStrip(state, focusBlock) {
@@ -104,19 +108,12 @@ export function renderStatsRail(state, selectedDate) {
   const streak = computeStreak(state);
   const completion = completionForDate(state, selectedDate || todayKey());
   return `
-    <div class="stats-rail" data-region="stats-rail" role="group" aria-label="Day stats">
-      <div class="stats-rail-item">
-        <p class="stats-rail-label">Day</p>
-        <p class="stats-rail-value">${dayNum}<span class="stats-rail-den">/${length}</span></p>
-      </div>
-      <div class="stats-rail-item">
-        <p class="stats-rail-label">Streak</p>
-        <p class="stats-rail-value stats-rail-streak">${streak}</p>
-      </div>
-      <div class="stats-rail-item">
-        <p class="stats-rail-label">Core</p>
-        <p class="stats-rail-value">${completion.doneCore}<span class="stats-rail-den">/${completion.coreCount}</span></p>
-      </div>
+    <div class="stats-inline" data-region="stats-rail" role="group" aria-label="Day stats">
+      <span>Day <strong>${dayNum}/${length}</strong></span>
+      <span class="stats-inline-sep" aria-hidden="true">·</span>
+      <span>Streak <strong class="stats-inline-streak">${streak}</strong></span>
+      <span class="stats-inline-sep" aria-hidden="true">·</span>
+      <span>Core <strong>${completion.doneCore}/${completion.coreCount}</strong></span>
     </div>`;
 }
 
@@ -137,48 +134,89 @@ function renderBackupBanner(state) {
     </div>`;
 }
 
-function renderNowCard(state, ui, { canEdit, isToday, isYesterday, completion, blocks, focus, mode, softRemaining, override, doneLookup, selectedDate }) {
-  const streak = computeStreak(state);
+function renderStatusBanner(state, ui, ctx) {
+  const {
+    canEdit,
+    isToday,
+    isYesterday,
+    completion,
+    blocks,
+    focus,
+    softRemaining,
+    override,
+    doneLookup,
+    selectedDate,
+    pct,
+    atRisk,
+  } = ctx;
+  const left = Math.max(0, completion.coreCount - completion.doneCore);
+
   if (completion.complete && isToday) {
     return `
-      <section class="panel now-card sealed-card" data-region="now-card">
-        <div class="sealed-stamp mx-auto mb-3">SEALED</div>
-        <p class="eyebrow" style="color:var(--build)">Day sealed</p>
-        <h2 class="display text-[2rem] leading-[1.05] mt-1">All core blocks done.</h2>
-        <p class="mt-2 text-sm" style="color:var(--mute)">
-          Streak ${streak} · ${completion.doneCore}/${completion.coreCount} core locked
-          ${softRemaining ? ` · ${softRemaining} soft left` : ""}
-        </p>
-        <div class="sealed-actions">
-          <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share today</button>
-          <button type="button" class="btn w-full" data-action="set-tab" data-tab="proof">View Proof</button>
-        </div>
-      </section>`;
+      <div class="status-banner status-banner-sealed" data-region="now-card" role="status">
+        <p class="status-banner-text min-w-0 flex-1">${icon("check", "h-4 w-4")} Day sealed — all core blocks done${softRemaining ? ` · ${softRemaining} soft left` : ""}</p>
+        <button type="button" class="btn btn-primary status-banner-action !min-h-9 !px-3 !text-xs shrink-0" data-action="share-progress" data-scope="day">Share</button>
+      </div>`;
   }
+
+  if (!blocks.length) {
+    return `
+      <div class="status-banner" data-region="now-card">
+        <div class="min-w-0 flex-1">
+          <p class="status-banner-text">${copy.today.emptyTrack}</p>
+        </div>
+        <button type="button" class="btn btn-primary !min-h-9 !px-3 !text-xs shrink-0" data-action="today-mode" data-mode="edit">Edit</button>
+      </div>`;
+  }
+
+  const riskClass = atRisk ? "status-banner-risk" : "";
+  const headline = atRisk
+    ? `Streak at risk — ${left} core block${left === 1 ? "" : "s"} left today`
+    : left > 0
+      ? `${left} core block${left === 1 ? "" : "s"} left`
+      : "Core complete";
+  const nextLine =
+    focus && !completion.complete
+      ? `Next: ${escapeHtml(focus.label)}${focus.time ? `, ${escapeHtml(formatTimeShort(focus.time))}` : ""}`
+      : "";
+
   return `
-    <section class="panel now-card now-card-compact" data-region="now-card">
-      <div class="mb-1 flex items-center justify-between gap-2">
-        <p class="eyebrow mb-0">${!blocks.length ? "Start here" : mode === "now" ? "Now" : mode === "next" ? "Up next" : "Focus"}</p>
-        <div class="flex gap-1">
-          ${isYesterday ? '<span class="chip chip-soft">catch-up</span>' : ""}
+    <div class="status-banner ${riskClass}" data-region="now-card">
+      <div class="min-w-0 flex-1">
+        <div class="mb-0.5 flex flex-wrap items-center gap-1">
+          ${isYesterday ? '<span class="chip chip-data">catch-up</span>' : ""}
           ${override ? `<span class="chip chip-maintain">${override.type === "work" ? "shift" : "off"}</span>` : ""}
         </div>
+        <p class="status-banner-text">${escapeHtml(headline)}</p>
+        ${nextLine ? `<p class="status-banner-sub">${nextLine}</p>` : ""}
+        <div class="day-rail mt-2"><div class="day-rail-fill" data-region="day-rail" style="width:${pct}%"></div></div>
       </div>
-      <h2 class="display now-card-title">${escapeHtml(focus?.label || "No blocks yet")}</h2>
-      <p class="now-card-footnote">${copy.today.nowSubtitle}</p>
-      ${renderMetaRow(focus?.time || "", focus?.tags, focus?.soft)}
-      ${focus?.details ? `<p class="mt-1.5 text-sm" style="color:var(--text-soft)">${escapeHtml(focus.details)}</p>` : ""}
       ${
-        blocks.length
-          ? `<button type="button" class="btn btn-primary mt-3 w-full gap-2 !min-h-11" data-action="toggle-block" data-id="${escapeHtml(focus?.id || "")}" data-date="${selectedDate}" ${canEdit && focus ? "" : "disabled"}>
-        ${icon("check", "h-5 w-5")}
-        ${focus && doneLookup[focus.id] ? "Done - tap to undo" : "Check this block"}
-      </button>
-      ${!canEdit ? `<p class="mt-2 text-xs" style="color:var(--mute)">Preview only. Checking works for today and yesterday catch-up.</p>` : ""}`
-          : `<p class="mt-2 text-sm" style="color:var(--mute)">${copy.today.emptyTrack}</p>
-             ${coachHasEditHint(state) ? "" : `<button type="button" class="btn btn-primary mt-3 w-full !min-h-11" data-action="today-mode" data-mode="edit">Open Edit</button>`}`
+        focus && canEdit && !completion.complete
+          ? `<button type="button" class="btn btn-primary !min-h-9 !px-3 !text-xs shrink-0" data-action="toggle-block" data-id="${escapeHtml(focus.id)}" data-date="${selectedDate}">Check</button>`
+          : ""
       }
-    </section>`;
+    </div>`;
+}
+
+function renderTomorrowFooter(state, selectedDate) {
+  const tomorrow = dateKey(addDays(parseDateKey(selectedDate), 1));
+  const dow = new Date(`${tomorrow}T12:00:00`).getDay();
+  const type = dayType(dow, state);
+  const blocks = resolveBlocksForDate(state, tomorrow);
+  const first = [...blocks].sort((a, b) => {
+    const am = parseTimeToMinutes(a.time);
+    const bm = parseTimeToMinutes(b.time);
+    if (am == null) return 1;
+    if (bm == null) return -1;
+    return am - bm;
+  })[0];
+  const typeLabel = type === "foundation" ? "Build day" : "Maintenance day";
+  const firstLine = first?.time ? `first block ${formatTimeShort(first.time)}` : "no blocks yet";
+  return `
+    <p class="tomorrow-footer" data-region="tomorrow-footer">
+      Tomorrow: <strong>${DAY_NAMES[dow]}</strong> · ${escapeHtml(typeLabel)} · ${escapeHtml(firstLine)}
+    </p>`;
 }
 
 function coachHasEditHint(state) {
@@ -186,93 +224,91 @@ function coachHasEditHint(state) {
   return coachHints(state, { playbook }).some((h) => h.action === "open-edit");
 }
 
-function renderBlockList(state, blocks, selectedDate, canEdit, focusId, { hideEmptyEdit = false } = {}) {
-  return blocks
+function renderHybridBlockList(state, blocks, selectedDate, canEdit, focusId) {
+  const sorted = [...blocks].sort((a, b) => {
+    const am = parseTimeToMinutes(a.time);
+    const bm = parseTimeToMinutes(b.time);
+    if (am == null && bm == null) return 0;
+    if (am == null) return 1;
+    if (bm == null) return -1;
+    return am - bm;
+  });
+  return sorted
     .map((b) => {
       const done = isDone(state, selectedDate, b.id);
       const isFocus = focusId && b.id === focusId;
+      const chips = tagChips(b.tags, b.soft);
       return `
-        <button type="button" class="task-row ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-action="toggle-block" data-id="${escapeHtml(b.id)}" data-date="${selectedDate}" data-block-id="${escapeHtml(b.id)}" ${canEdit ? "" : "disabled"} aria-pressed="${done}">
-          <span class="check ${done ? "is-done" : ""}" aria-hidden="true">${done ? icon("check", "h-4 w-4") : ""}</span>
-          <div class="min-w-0 text-left w-full">
-            <p class="task-title">${escapeHtml(b.label)}</p>
-            ${renderMetaRow(b.time, b.tags, b.soft)}
-          </div>
+        <button type="button" class="hybrid-row ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-action="toggle-block" data-id="${escapeHtml(b.id)}" data-date="${selectedDate}" data-block-id="${escapeHtml(b.id)}" data-preview-label="${escapeHtml(b.label || "")}" data-preview-time="${escapeHtml(formatTimeShort(b.time))}" data-preview-tags="${escapeHtml((b.tags || []).join(", "))}" data-preview-soft="${b.soft ? "1" : "0"}" data-preview-details="${escapeHtml(b.details || "")}" ${canEdit ? "" : "disabled"} aria-pressed="${done}">
+          <span class="hybrid-rail" aria-hidden="true">
+            <span class="hybrid-time">${escapeHtml(formatTimeShort(b.time))}</span>
+            <span class="hybrid-dot"></span>
+          </span>
+          <span class="check shrink-0 ${done ? "is-done" : ""}" aria-hidden="true">${done ? icon("check", "h-4 w-4") : ""}</span>
+          <span class="hybrid-body min-w-0 text-left">
+            <span class="hybrid-label">${escapeHtml(b.label)}</span>
+            ${chips ? `<span class="hybrid-chips">${chips}</span>` : ""}
+          </span>
         </button>`;
     })
     .join("");
 }
 
-function renderTimeline(state, blocks, selectedDate, canEdit, focusId) {
-  return renderScheduleTimeline(blocks, {
-    mode: "track",
-    state,
-    selectedDate,
-    canEdit,
-    focusId,
-    scrollable: true,
-    onEmpty: "No blocks for this day.",
-  });
-}
-
 function renderDayPanel(state, ui, ctx) {
-  const {
-    selectedDate,
-    selectedDay,
-    canEdit,
-    blocks,
-    completion,
-    type,
-    override,
-    pct,
-    focus,
-    todayView,
-  } = ctx;
-  const week = weekDates(todayKey(), 0);
+  const { selectedDate, selectedDay, canEdit, blocks, completion, type, override, focus } = ctx;
+  const week = Array.from({ length: 7 }, (_, i) => dateKey(addDays(parseDateKey(todayKey()), i)));
+  const realToday = todayKey();
   const pills = week
     .map((key) => {
       const dow = new Date(`${key}T12:00:00`).getDay();
       const c = completionForDate(state, key);
       const active = key === selectedDate;
       const sealed = c.complete;
+      const isRealToday = key === realToday;
       return `
-        <button type="button" class="pill-day snap-start shrink-0 ${dayType(dow, state)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}" aria-pressed="${active}">
+        <button type="button" class="pill-day snap-start shrink-0 ${dayType(dow, state)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""} ${isRealToday ? "is-today" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}${isRealToday ? ", today" : ""}" aria-pressed="${active}">
           <span class="block text-[10px] font-semibold">${DAY_NAMES[dow]}</span>
           <span class="block text-[11px]">${formatDisplayDate(key).slice(0, 5)}</span>
+          ${isRealToday ? '<span class="pill-today-dot" aria-hidden="true"></span>' : ""}
         </button>`;
     })
     .join("");
 
   const hideEmptyEdit = coachHasEditHint(state);
-  const listHtml =
-    todayView === "timeline"
-      ? renderTimeline(state, blocks, selectedDate, canEdit, focus?.id)
-      : `<div class="block-list-stack" data-region="block-list">${
-          blocks.length
-            ? renderBlockList(state, blocks, selectedDate, canEdit, focus?.id)
-            : `<div class="py-4 text-center">
-            <p class="text-sm" style="color:var(--mute)">No blocks for this day.</p>
-            ${hideEmptyEdit ? "" : `<button type="button" class="btn btn-primary mt-3 w-full" data-action="today-mode" data-mode="edit">Open Edit</button>`}
-          </div>`
-        }</div>`;
+  const listHtml = `<div class="hybrid-list" data-region="block-list">${
+    blocks.length
+      ? renderHybridBlockList(state, blocks, selectedDate, canEdit, focus?.id)
+      : `<div class="py-4 text-center">
+          <p class="text-sm" style="color:var(--mute)">No blocks for this day.</p>
+          ${hideEmptyEdit ? "" : `<button type="button" class="btn btn-primary mt-3 w-full" data-action="today-mode" data-mode="edit">Open Edit</button>`}
+        </div>`
+  }</div>`;
 
   return `
     <section class="panel" data-region="day-panel">
-      <div class="mb-2 flex items-start justify-between gap-2">
+      <div class="mb-3 flex items-start justify-between gap-2">
         <div class="min-w-0">
           <p class="text-sm font-semibold leading-snug">${DAY_NAMES_FULL[selectedDay]}</p>
           <p class="text-sm font-semibold leading-snug" style="color:var(--text-soft)">${override ? describeOverride(override) : type === "foundation" ? "Build day" : "Maintenance"}</p>
-          <p class="text-sm font-semibold leading-snug" style="color:var(--mute)">${formatDisplayDate(selectedDate)}</p>
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <span class="chip chip-build" data-region="core-chip">${completion.doneCore}/${completion.coreCount} core</span>
           <button type="button" class="icon-btn" data-action="refresh-today" aria-label="Refresh schedule">${icon("refresh", "h-4 w-4")}</button>
         </div>
       </div>
-      <div class="mb-3">${viewToggle(todayView)}</div>
-      <div class="day-rail mb-3"><div class="day-rail-fill" data-region="day-rail" style="width:${pct}%"></div></div>
-      <div class="mb-1 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory" role="group" aria-label="This week">${pills}</div>
+      <div class="mb-3">
+        ${renderDateField({
+          id: "today-date",
+          name: "todayDate",
+          value: selectedDate,
+          action: "select-today-date",
+          label: "Day",
+        })}
+      </div>
+      <div class="mb-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory" role="group" aria-label="This week">${pills}</div>
+      <p class="eyebrow mb-2">Today's blocks</p>
       ${listHtml}
+      ${ctx.isToday && completion.complete ? renderTomorrowFooter(state, selectedDate) : ""}
     </section>`;
 }
 
@@ -290,7 +326,7 @@ function buildTrackContext(state, ui) {
   const softRemaining = blocks.filter((b) => b.soft && !doneLookup[b.id]).length;
   const override = state.workOverrides?.[selectedDate];
   const pct = completion.coreCount ? Math.round((completion.doneCore / completion.coreCount) * 100) : 0;
-  const todayView = ui.todayView === "timeline" || state.settings?.todayView === "timeline" ? "timeline" : "list";
+  const atRisk = isAtRisk(blocks, doneLookup, completion, isToday);
   return {
     selectedDate,
     selectedDay,
@@ -306,7 +342,7 @@ function buildTrackContext(state, ui) {
     softRemaining,
     override,
     pct,
-    todayView,
+    atRisk,
   };
 }
 
@@ -328,8 +364,8 @@ export function patchTodayTrack(root, state, ui, opts = {}) {
   if (backup && backupHtml) backup.outerHTML = backupHtml;
   else if (backup && !backupHtml) backup.remove();
   else if (!backup && backupHtml) {
-    const stats = screen.querySelector('[data-region="stats-rail"]');
-    if (stats) stats.insertAdjacentHTML("afterend", backupHtml);
+    const statsEl = screen.querySelector('[data-region="stats-rail"]');
+    if (statsEl) statsEl.insertAdjacentHTML("afterend", backupHtml);
   }
 
   const coach = screen.querySelector('[data-region="coach-banners"]');
@@ -344,10 +380,7 @@ export function patchTodayTrack(root, state, ui, opts = {}) {
 
   const now = screen.querySelector('[data-region="now-card"]');
   if (now) {
-    now.outerHTML = renderNowCard(state, ui, {
-      ...ctx,
-      canEdit: ctx.canEdit,
-    });
+    now.outerHTML = renderStatusBanner(state, ui, ctx);
   }
 
   const dayPanel = screen.querySelector('[data-region="day-panel"]');
@@ -368,11 +401,15 @@ export function renderToday(state, ui, opts = {}) {
     return `
       <section class="screen">
         <header class="page-header">
-          <p class="eyebrow">${copy.today.editEyebrow}</p>
-          <h1 class="display">${copy.today.editTitle}</h1>
-          <p class="mt-2 text-sm" style="color:var(--mute)">${copy.today.editSubtitle(dayNum, length)}</p>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="eyebrow">${copy.today.editEyebrow}</p>
+              <h1 class="display">${copy.today.editTitle}</h1>
+              <p class="mt-2 text-sm" style="color:var(--mute)">${copy.today.editSubtitle(dayNum, length)}</p>
+            </div>
+            ${editToggleBtn(todayMode)}
+          </div>
         </header>
-        ${modeToggle(todayMode)}
         ${renderFlash(ui.flash)}
         ${renderPlan(state, ui, { embedded: true })}
       </section>
@@ -381,9 +418,6 @@ export function renderToday(state, ui, opts = {}) {
 
   const ctx = buildTrackContext(state, ui);
   const displayName = String(state.settings?.displayName || "").trim() || "Marco";
-  const events = upcomingEvents(state, todayKey(), 21)
-    .filter((e) => e.type === "birthday")
-    .slice(0, 3);
   const showCoachStrip =
     ctx.isToday && !ctx.completion.complete && renderCoachStrip(state, ctx.focus);
 
@@ -395,46 +429,31 @@ export function renderToday(state, ui, opts = {}) {
             <p class="eyebrow">${copy.today.eyebrow}</p>
             <h1 class="display">${escapeHtml(copy.today.headline(displayName))}</h1>
           </div>
-          ${
-            !state.settings?.tourCompleted
-              ? `<button type="button" class="btn shrink-0 !min-h-10 !px-3 !text-xs" data-action="open-tips">${copy.today.quickTour}</button>`
-              : ""
-          }
+          <div class="flex shrink-0 items-center gap-1">
+            ${
+              (() => {
+                const sealedBefore = Object.keys(state.completions || {}).some((key) => {
+                  const c = completionForDate(state, key);
+                  return c.complete;
+                });
+                const showTour = !state.settings?.tourCompleted && !sealedBefore;
+                return showTour
+                  ? `<button type="button" class="btn shrink-0 !min-h-10 !px-3 !text-xs" data-action="open-tips" data-track="today">${copy.today.quickTour}</button>`
+                  : "";
+              })()
+            }
+            ${editToggleBtn(todayMode)}
+          </div>
         </div>
       </header>
 
-      ${modeToggle(todayMode)}
       ${renderStatsRail(state, ctx.selectedDate)}
       ${renderFlash(ui.flash)}
       ${showCoachStrip || ""}
       ${renderBackupBanner(state)}
 
-      ${renderNowCard(state, ui, ctx)}
+      ${renderStatusBanner(state, ui, ctx)}
       ${renderDayPanel(state, ui, ctx)}
-
-      ${
-        events.length
-          ? `<section class="panel" aria-label="Upcoming birthdays">
-              <p class="eyebrow mb-3">Coming up</p>
-              <ul class="upcoming-list">
-                ${events
-                  .map((e) => {
-                    const delta = daysBetween(todayKey(), e.occursOn);
-                    const when =
-                      delta === 0 ? "Today" : delta === 1 ? "Tomorrow" : `In ${delta} days`;
-                    return `<li class="upcoming-item">
-                      <div class="upcoming-date" aria-hidden="true">${formatDisplayDate(e.occursOn)}</div>
-                      <div class="upcoming-body">
-                        <p class="upcoming-title">${escapeHtml(e.title)}</p>
-                        <p class="upcoming-when">${when}</p>
-                      </div>
-                    </li>`;
-                  })
-                  .join("")}
-              </ul>
-            </section>`
-          : ""
-      }
 
       ${renderInstallTip(state, { canInstall: Boolean(opts.canInstall) })}
     </section>

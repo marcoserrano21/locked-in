@@ -2,6 +2,7 @@ import playbookSeed from "../../content/freelance.playbook.json";
 import { mergePlaybook } from "../hustle-playbook.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
+import { renderDateField } from "./DatePicker.js";
 import { renderFitness } from "./Fitness.js";
 import { paginate, renderPager } from "./Pagination.js";
 
@@ -180,7 +181,7 @@ function renderHustlePanel(state, ui) {
             ${icon("plus", "h-4 w-4")} Add log
           </button>
         </div>
-        ${rows || `<div class="py-4 text-center">
+        ${rows ? `<div class="plan-row-stack">${rows}</div>` : `<div class="py-4 text-center">
           <p class="text-sm" style="color:var(--mute)">Monday money block is empty = no outreach = no clients.</p>
           <button type="button" class="btn btn-primary mt-3 w-full" data-action="add-outreach">Log first touch</button>
         </div>`}
@@ -278,7 +279,7 @@ export function renderOutreachEditorModal(ui) {
   };
   const isNew = !draft.id;
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add outreach" : "Edit outreach"}" data-stop>
         <h2 class="display text-3xl">${isNew ? "Add log" : "Edit log"}</h2>
         <form class="mt-4 space-y-3" data-action="save-outreach">
@@ -287,10 +288,13 @@ export function renderOutreachEditorModal(ui) {
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="out-who">Who</label>
             <input class="input" id="out-who" name="who" required placeholder="Name / business" value="${escapeHtml(draft.who || "")}" />
           </div>
-          <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="out-date">Date</label>
-            <input class="input" id="out-date" name="date" type="date" required value="${escapeHtml(draft.date || todayKey())}" />
-          </div>
+          ${renderDateField({
+            id: "out-date",
+            name: "date",
+            value: draft.date || todayKey(),
+            required: true,
+            label: "Date",
+          })}
           <div class="flex gap-2">
             <div class="flex-1">
               <label class="mb-1 block text-xs" style="color:var(--mute)" for="out-channel">Channel</label>

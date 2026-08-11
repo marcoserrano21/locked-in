@@ -60,6 +60,7 @@ export function muscleLabel(id) {
 export function defaultFitnessSettings() {
   return {
     preferredUnit: "lb",
+    bodyWeight: 170,
     recentExercises: [],
     favoriteExercises: [],
     equipmentAvailable: EQUIPMENT_OPTIONS.map((e) => e.id),
@@ -69,13 +70,23 @@ export function defaultFitnessSettings() {
     trainWhy: [],
     prefsCaptured: false,
     restSeconds: 90,
+    splitType: "ppl",
+    gymDaysPerWeek: 4,
+    sessionMinutes: 60,
   };
 }
 
+export const SESSION_DURATIONS = [
+  { id: 30, label: "30", detail: "4–6 exercises" },
+  { id: 45, label: "45", detail: "6–8 exercises" },
+  { id: 60, label: "60", detail: "8–10 exercises" },
+  { id: 90, label: "90", detail: "12–14 exercises" },
+];
+
 export const EXPERIENCE_LEVELS = [
-  { id: "beginner", label: "Beginner", detail: "5–6 exercises" },
-  { id: "intermediate", label: "Intermediate", detail: "7–9 exercises" },
-  { id: "expert", label: "Expert", detail: "10–12 exercises" },
+  { id: "beginner", label: "Beginner", detail: "Shorter end of session band" },
+  { id: "intermediate", label: "Intermediate", detail: "Mid session band" },
+  { id: "expert", label: "Expert", detail: "Fuller end of session band" },
 ];
 
 /** Physical program drivers */
@@ -99,6 +110,7 @@ export const WHY_YOU_TRAIN = [
   { id: "community", label: "Community", line: "Quiet camaraderie of shared effort." },
   { id: "habit", label: "Build the habit", line: "Not going feels wrong. Keep the momentum." },
   { id: "performance", label: "Performance", line: "What can this body do — and how does it adapt?" },
+  { id: "discipline", label: "Discipline", line: "Show up even when you don’t feel like it." },
 ];
 
 const LEGACY_WHY_MAP = {
@@ -164,6 +176,161 @@ export function sessionVolume(session, unit = "lb") {
 export function formatVolume(n) {
   if (n >= 10000) return `${Math.round(n / 1000)}k`;
   return String(Math.round(n));
+}
+
+/** Count of done sets in a session. */
+export function sessionSetCount(session) {
+  if (!session?.exercises?.length) return 0;
+  return session.exercises.reduce((total, ex) => {
+    return total + (ex.sets || []).filter((s) => s.done).length;
+  }, 0);
+}
+
+/** Elapsed minutes from startedAt → completedAt (min 1 when sealed). */
+export function sessionDurationMinutes(session) {
+  const start = session?.startedAt ? Date.parse(session.startedAt) : NaN;
+  const end = session?.completedAt ? Date.parse(session.completedAt) : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return session?.completedAt ? 1 : 0;
+  }
+  return Math.max(1, Math.round((end - start) / 60000));
+}
+
+export function isStreakMilestone(n) {
+  return [7, 30, 100].includes(Number(n));
+}
+
+function isBodyweightForPr(exercise) {
+  const cat = findExerciseCatalog(exercise?.name) || {};
+  const eq = cat.equipment || exercise?.equipment || [];
+  const name = String(exercise?.name || "");
+  return (
+    (eq.includes("bodyweight") &&
+      !eq.some((e) => ["barbell", "dumbbell", "machine", "cable", "kettlebell"].includes(e))) ||
+    /pull-up|chin-up|dip|push-up|plank|hanging|burpee|air squat/i.test(name)
+  );
+}
+
+function formatPrLoad(weight, reps, unit, bodyweight) {
+  if (bodyweight) return `${Number(reps) || 0} reps`;
+  return `${Number(weight) || 0} ${unit || "lb"}`;
+}
+
+function bestDoneSet(sets = [], bodyweight = false) {
+  const done = (sets || []).filter((s) => s.done);
+  if (!done.length) return null;
+  return done.reduce((acc, set) => {
+    const w = Number(set.weight) || 0;
+    const r = Number(set.reps) || 0;
+    const aw = Number(acc.weight) || 0;
+    const ar = Number(acc.reps) || 0;
+    if (bodyweight) return r > ar ? set : acc;
+    if (w > aw) return set;
+    if (w === aw && r > ar) return set;
+    return acc;
+  }, done[0]);
+}
+
+/** All-time best done set for an exercise across completed sessions (optional exclude). */
+export function bestHistoricalSet(log = [], exerciseName, { excludeSessionId = null } = {}) {
+  const name = String(exerciseName || "")
+    .trim()
+    .toLowerCase();
+  if (!name) return null;
+  let best = null;
+  let bodyweight = false;
+  for (const session of completedSessions(log)) {
+    if (excludeSessionId && session.id === excludeSessionId) continue;
+    for (const ex of session.exercises || []) {
+      if (String(ex.name || "").trim().toLowerCase() !== name) continue;
+      const bw = isBodyweightForPr(ex);
+      const set = bestDoneSet(ex.sets, bw);
+      if (!set) continue;
+      if (!best) {
+        best = { ...set, unit: set.unit || "lb", bodyweight: bw };
+        bodyweight = bw;
+        continue;
+      }
+      const w = Number(set.weight) || 0;
+      const r = Number(set.reps) || 0;
+      const bwBest = Number(best.weight) || 0;
+      const br = Number(best.reps) || 0;
+      if (bw || bodyweight) {
+        if (r > br) best = { ...set, unit: set.unit || best.unit, bodyweight: true };
+      } else if (w > bwBest || (w === bwBest && r > br)) {
+        best = { ...set, unit: set.unit || best.unit, bodyweight: false };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Strongest PR in this session vs prior history.
+ * @returns {{ exerciseName, previousValue, newValue, weightDelta, repsDelta } | null}
+ */
+export function detectSessionPr(session, log = []) {
+  if (!session?.exercises?.length) return null;
+  let winner = null;
+  for (const ex of session.exercises) {
+    const bw = isBodyweightForPr(ex);
+    const current = bestDoneSet(ex.sets, bw);
+    if (!current) continue;
+    const hist = bestHistoricalSet(log, ex.name, { excludeSessionId: session.id });
+    const unit = current.unit || hist?.unit || "lb";
+    const cw = Number(current.weight) || 0;
+    const cr = Number(current.reps) || 0;
+    if (!hist) continue;
+    const hw = Number(hist.weight) || 0;
+    const hr = Number(hist.reps) || 0;
+    const isPr = bw ? cr > hr : cw > hw || (cw === hw && cr > hr);
+    if (!isPr) continue;
+    const candidate = {
+      exerciseName: ex.name,
+      previousValue: formatPrLoad(hw, hr, hist.unit || unit, bw),
+      newValue: formatPrLoad(cw, cr, unit, bw),
+      weightDelta: bw ? 0 : cw - hw,
+      repsDelta: bw ? cr - hr : cw === hw ? cr - hr : 0,
+      bodyweight: bw,
+    };
+    if (
+      !winner ||
+      candidate.weightDelta > winner.weightDelta ||
+      (candidate.weightDelta === winner.weightDelta && candidate.repsDelta > winner.repsDelta)
+    ) {
+      winner = candidate;
+    }
+  }
+  return winner;
+}
+
+/**
+ * Payload for the full-screen workout completion celebrate.
+ * `session` should already include completedAt; `log` should include that session.
+ */
+export function buildWorkoutCompletionPayload(session, log = [], settings = {}) {
+  const unit = settings?.preferredUnit || "lb";
+  const sealedLog = log || [];
+  const pr = detectSessionPr(session, sealedLog);
+  const streakCount = workoutStreak(sealedLog);
+  let tier = "standard";
+  if (pr) tier = "pr";
+  else if (isStreakMilestone(streakCount)) tier = "streak-milestone";
+
+  return {
+    type: "fitness",
+    tier,
+    sessionId: session?.id || "",
+    exerciseName: pr?.exerciseName,
+    previousValue: pr?.previousValue,
+    newValue: pr?.newValue,
+    streakCount,
+    exerciseCount: (session?.exercises || []).length,
+    setCount: sessionSetCount(session),
+    totalVolume: sessionVolume(session, unit),
+    unit,
+    durationMinutes: sessionDurationMinutes(session),
+  };
 }
 
 export function weekSessionKeys() {
@@ -264,6 +431,36 @@ export function sparklinePath(values = [], width = 120, height = 36) {
     .join(" ");
 }
 
+/** Session volume points oldest → newest for History analytics. */
+export function sessionVolumeHistory(log = [], limit = 8, unit = "lb") {
+  return completedSessions(log)
+    .slice()
+    .sort((a, b) => (a.date > b.date ? 1 : -1))
+    .slice(-limit)
+    .map((s) => ({
+      id: s.id,
+      date: s.date,
+      volume: sessionVolume(s, unit),
+    }));
+}
+
+/** Muscle group hit counts across recent completed sessions. */
+export function muscleBalanceCounts(log = [], limitSessions = 24) {
+  const sessions = completedSessions(log)
+    .slice()
+    .sort((a, b) => (b.date > a.date ? 1 : -1))
+    .slice(0, limitSessions);
+  const counts = {};
+  sessions.forEach((s) => {
+    (s.exercises || []).forEach((ex) => {
+      const g = normalizeMuscleGroup(ex.muscleGroup);
+      if (!g) return;
+      counts[g] = (counts[g] || 0) + 1;
+    });
+  });
+  return counts;
+}
+
 export function filterExercises(query = "", muscleGroup = "all", opts = {}) {
   const q = String(query || "").trim().toLowerCase();
   const group = normalizeMuscleGroup(muscleGroup);
@@ -298,11 +495,51 @@ export function suggestedNextLoad(log, exerciseName, unit = "lb") {
   const prev = previousPerformance(log, exerciseName);
   if (!prev) return { weight: 0, reps: 8 };
   const isBodyweight = Number(prev.weight) === 0;
+  const prevReps = Number(prev.reps) || 8;
+  // Alternate bias: +5 lb when loaded, else +1–2 reps for bodyweight / stalled loads
+  if (isBodyweight) {
+    return { weight: 0, reps: prevReps + 1, unit: prev.unit || unit };
+  }
   return {
-    weight: isBodyweight ? 0 : Math.round((Number(prev.weight) || 0) + 5),
-    reps: Number(prev.reps) || 8,
+    weight: Math.round((Number(prev.weight) || 0) + 5),
+    reps: prevReps,
     unit: prev.unit || unit,
   };
+}
+
+/** Default rest timer length by training outcome (seconds). */
+export function restSecondsForGoal(goal = "build_muscle") {
+  switch (goal) {
+    case "strength":
+      return 240;
+    case "lose_weight":
+    case "tone":
+      return 45;
+    case "rehab":
+      return 60;
+    case "longevity":
+      return 75;
+    case "sport_prep":
+    case "skill":
+      return 90;
+    case "build_muscle":
+    default:
+      return 90;
+  }
+}
+
+export function restPresetsForGoal(goal = "build_muscle") {
+  switch (goal) {
+    case "strength":
+      return [180, 240, 300];
+    case "lose_weight":
+    case "tone":
+      return [30, 45, 60];
+    case "rehab":
+      return [45, 60, 90];
+    default:
+      return [60, 90, 180];
+  }
 }
 
 export function canCompleteWorkout(session) {
@@ -330,7 +567,13 @@ export function canCompleteWorkout(session) {
 export const PPL_PRESETS = {
   push: ["chest", "shoulders", "triceps", "abs"],
   pull: ["back", "biceps", "traps", "forearms"],
+  legs: ["quads", "hamstrings", "glutes", "calves", "lower_back"],
   lower: ["quads", "hamstrings", "glutes", "calves", "lower_back"],
+};
+
+export const UL_PRESETS = {
+  upper: ["chest", "back", "shoulders", "biceps", "triceps"],
+  lower: ["quads", "hamstrings", "glutes", "calves", "lower_back", "abs"],
 };
 
 export function makeSet(unit = "lb", overrides = {}) {
@@ -340,13 +583,17 @@ export function makeSet(unit = "lb", overrides = {}) {
     weight: overrides.weight != null ? Number(overrides.weight) || 0 : 0,
     unit: overrides.unit || unit,
     done: false,
+    restSeconds: overrides.restSeconds != null ? Number(overrides.restSeconds) : undefined,
   };
 }
 
 export function makeExercise(name, muscleGroup = "", unit = "lb", setSeed = null, opts = {}) {
   const seed = setSeed || { weight: 0, reps: 8, unit };
   const setCount = Math.max(1, Number(opts.sets) || 3);
-  const sets = Array.from({ length: setCount }, () => makeSet(unit, seed));
+  const restSeconds = opts.restSeconds != null ? Number(opts.restSeconds) : undefined;
+  const sets = Array.from({ length: setCount }, () =>
+    makeSet(unit, restSeconds != null ? { ...seed, restSeconds } : seed)
+  );
   return {
     id: uid("ex"),
     name: String(name || "").trim(),
@@ -355,6 +602,7 @@ export function makeExercise(name, muscleGroup = "", unit = "lb", setSeed = null
     pairId: opts.pairId || null,
     pairType: opts.pairType || null,
     role: opts.role || "",
+    restSeconds: restSeconds ?? null,
   };
 }
 

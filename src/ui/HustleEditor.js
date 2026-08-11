@@ -104,7 +104,7 @@ export function renderHustleEditorModal(state, ui) {
   }
 
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet modal-scroll-body" role="dialog" aria-modal="true" aria-label="Edit command center" data-stop>
         <div class="flex items-center justify-between gap-2 shrink-0">
           <h2 class="display text-3xl">Edit command center</h2>

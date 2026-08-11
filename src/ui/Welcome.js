@@ -1,4 +1,6 @@
+import { escapeHtml, primaryBtn } from "./dom.js";
 import { copy } from "../copy/voice.js";
+import { DAY_NAMES } from "../schedule.js";
 
 const BUILD_DEFAULT = [0, 1, 2];
 
@@ -11,6 +13,12 @@ export function renderWelcomeModal(ui, state) {
   const blockPreset = ui.setupBlockPreset || "morning";
   const length = Number(state?.settings?.challengeLength || ui.welcomeChallengeLength || 30);
   const premium = Boolean(state?.settings?.premiumUnlocked);
+  const nameOk = name.trim().length > 0;
+  const focusOk = Boolean(focus);
+  const buildDaysOk = buildDays.length > 0;
+  const blockPresetOk = Boolean(blockPreset);
+  const appModeOk = Boolean(appMode);
+  const lengthOk = Number.isFinite(length) && length >= 7;
 
   if (step === 1) {
     return `
@@ -22,9 +30,9 @@ export function renderWelcomeModal(ui, state) {
           <form class="mt-5 space-y-3" data-action="welcome-name">
             <div>
               <label class="mb-1 block text-xs" style="color:var(--mute)" for="welcome-name">What should we call you?</label>
-              <input class="input" id="welcome-name" name="displayName" required placeholder="Your name" value="${escapeHtml(name)}" autocomplete="nickname" />
+              <input class="input" id="welcome-name" name="displayName" required placeholder="Your name" value="${escapeHtml(name)}" autocomplete="nickname" data-action="welcome-name-input" />
             </div>
-            <button type="submit" class="btn btn-primary w-full">Continue</button>
+            ${primaryBtn("Continue", { disabled: !nameOk, type: "submit", className: "w-full" })}
           </form>
           <button type="button" class="btn w-full mt-2 !text-xs" data-action="welcome-demo">Try Marco demo instead</button>
         </div>
@@ -61,7 +69,7 @@ export function renderWelcomeModal(ui, state) {
             </div>
             <div class="flex gap-2 pt-1">
               <button type="button" class="btn flex-1" data-action="welcome-back" data-step="1">Back</button>
-              <button type="submit" class="btn btn-primary flex-1">Continue</button>
+              ${primaryBtn("Continue", { disabled: !focusOk, type: "submit", className: "flex-1" })}
             </div>
           </form>
         </div>
@@ -103,7 +111,7 @@ export function renderWelcomeModal(ui, state) {
           </div>
           <div class="flex gap-2 mt-5">
             <button type="button" class="btn flex-1" data-action="welcome-back" data-step="2">Back</button>
-            <button type="button" class="btn btn-primary flex-1" data-action="welcome-next" data-step="4">Continue</button>
+            ${primaryBtn("Continue", { disabled: !buildDaysOk || !blockPresetOk, className: "flex-1", attrs: 'data-action="welcome-next" data-step="4"' })}
           </div>
         </div>
       </div>
@@ -139,7 +147,7 @@ export function renderWelcomeModal(ui, state) {
             </div>
             <div class="flex gap-2 pt-1">
               <button type="button" class="btn flex-1" data-action="welcome-back" data-step="3">Back</button>
-              <button type="submit" class="btn btn-primary flex-1">Continue</button>
+              ${primaryBtn("Continue", { disabled: !appModeOk, type: "submit", className: "flex-1" })}
             </div>
           </form>
         </div>
@@ -180,7 +188,7 @@ export function renderWelcomeModal(ui, state) {
         </div>
         <div class="flex gap-2 mt-5">
           <button type="button" class="btn flex-1" data-action="welcome-back" data-step="4">Back</button>
-          <button type="button" class="btn btn-primary flex-1" data-action="welcome-finish">Start my track</button>
+          ${primaryBtn("Start my track", { disabled: !lengthOk, className: "flex-1", attrs: 'data-action="welcome-finish"' })}
         </div>
       </div>
     </div>

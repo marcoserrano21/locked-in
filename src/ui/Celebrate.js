@@ -30,7 +30,7 @@ export function renderCelebrate(payload, state) {
         </p>
         <p class="serif-accent mt-3 text-xl" style="color:var(--text-soft)">${name}, proof over vibes.</p>
         <div class="sealed-actions">
-          <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share proof</button>
+          <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="sealed">${icon("proof", "h-5 w-5")} Share proof</button>
           <button type="button" class="btn w-full" data-action="dismiss-celebrate">Keep moving</button>
         </div>
       </div>

@@ -29,7 +29,7 @@ export function renderShiftSheet(ui, state) {
   const ov = state.workOverrides?.[date];
   const type = ui.shiftSheetType || ov?.type || "work";
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="Edit shift" data-stop>
         <h2 class="display text-3xl">${formatDisplayDate(date)}</h2>
         <p class="mt-1 text-sm" style="color:var(--mute)">Tap a type, set hours, save.</p>

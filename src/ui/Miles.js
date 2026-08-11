@@ -3,6 +3,7 @@ import { ratePerMile, totalEarnings, totalMiles } from "../uber.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
 import { paginate, renderPager } from "./Pagination.js";
+import { renderDateField } from "./DatePicker.js";
 
 export function renderMiles(state, ui = {}) {
   const miles = totalMiles(state);
@@ -98,15 +99,18 @@ export function renderUberEditorModal(ui) {
   };
   const isNew = !draft.id;
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add session" : "Edit session"}" data-stop>
         <h2 class="display text-3xl">${isNew ? "Add session" : "Edit session"}</h2>
         <form class="mt-4 space-y-3" data-action="save-uber">
           <input type="hidden" name="id" value="${escapeHtml(draft.id || "")}" />
-          <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-date">Date</label>
-            <input class="input" id="uber-date" name="date" type="date" required value="${escapeHtml(draft.date || todayKey())}" />
-          </div>
+          ${renderDateField({
+            id: "uber-date",
+            name: "date",
+            value: draft.date || todayKey(),
+            required: true,
+            label: "Date",
+          })}
           <div class="flex gap-2">
             <div class="flex-1">
               <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-miles">Miles</label>

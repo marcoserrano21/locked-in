@@ -15,19 +15,41 @@ const TIPS = [
   },
 ];
 
-export function renderTipsModal(state) {
-  const step = Number(state?.settings?.tourStep || 0);
-  const tip = TIPS[Math.min(step, TIPS.length - 1)] || TIPS[0];
-  const last = step >= TIPS.length - 1;
+const FITNESS_TIPS = [
+  {
+    title: "Confirm your setup",
+    body: "Level, gear, bodyweight, and goal seed the plan. Adjust anytime from Adjust gear.",
+  },
+  {
+    title: "Pick the muscles",
+    body: "Tap the body map or chips, then Build. We fill compounds and accessories for your gear.",
+  },
+  {
+    title: "Log sets, then seal",
+    body: "Check every set with weight and reps. Complete locks the session into History proof.",
+  },
+];
+
+export function tipsForTrack(track = "today") {
+  return track === "fitness" ? FITNESS_TIPS : TIPS;
+}
+
+export function renderTipsModal(state, ui = {}) {
+  const track = ui.tipsTrack === "fitness" ? "fitness" : "today";
+  const tips = tipsForTrack(track);
+  const stepKey = track === "fitness" ? "fitnessTourStep" : "tourStep";
+  const step = Number(state?.settings?.[stepKey] || 0);
+  const tip = tips[Math.min(step, tips.length - 1)] || tips[0];
+  const last = step >= tips.length - 1;
 
   return `
     <div class="modal-backdrop modal-enter" data-stop>
       <div class="modal-sheet sheet-enter" role="dialog" aria-modal="true" aria-label="Tips" data-stop>
-        <p class="eyebrow" style="color:var(--build)">Tip ${Math.min(step + 1, TIPS.length)} of ${TIPS.length}</p>
+        <p class="eyebrow" style="color:var(--build)">Tip ${Math.min(step + 1, tips.length)} of ${tips.length}</p>
         <h2 class="display text-4xl mt-1">${escapeHtml(tip.title)}</h2>
         <p class="mt-3 text-sm" style="color:var(--mute)">${escapeHtml(tip.body)}</p>
         <div class="mt-6 flex gap-1" aria-hidden="true">
-          ${TIPS.map((_, i) => `<span class="tip-dot ${i === step ? "is-active" : ""}"></span>`).join("")}
+          ${tips.map((_, i) => `<span class="tip-dot ${i === step ? "is-active" : ""}"></span>`).join("")}
         </div>
         <button type="button" class="btn btn-primary w-full mt-5 !min-h-11" data-action="tour-next">
           ${last ? "Got it" : "Next tip"}
@@ -37,4 +59,4 @@ export function renderTipsModal(state) {
   `;
 }
 
-export { TIPS };
+export { TIPS, FITNESS_TIPS };

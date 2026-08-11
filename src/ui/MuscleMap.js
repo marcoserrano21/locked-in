@@ -1,9 +1,16 @@
 import { escapeHtml } from "./dom.js";
 import { normalizeMuscleGroup } from "../fitness.js";
+import frontSvgRaw from "../assets/anatomy/front_muscles.svg?raw";
+import backSvgRaw from "../assets/anatomy/back_muscles.svg?raw";
 
-const BODY = "rgba(139, 147, 167, 0.38)";
-const HI = "#F2F4F8";
-const HEAD = "rgba(139, 147, 167, 0.28)";
+const SELECTED = "#3ECF8E";
+const MUTED = "rgba(139, 147, 167, 0.38)";
+const OUTLINE = "rgba(139, 147, 167, 0.2)";
+const STROKE = "rgba(42, 48, 64, 0.55)";
+
+/** Crop each side so the figure fills the stage (source art is offset in a wide viewBox). */
+const FRONT_VB = "30 35 400 690";
+const BACK_VB = "450 35 400 690";
 
 const FRONT_VIEW = new Set([
   "chest",
@@ -12,12 +19,45 @@ const FRONT_VIEW = new Set([
   "biceps",
   "quads",
   "adductors",
+  "abductors",
   "neck",
   "forearms",
 ]);
 
-function fill(active, key) {
-  return active === key ? HI : BODY;
+/** SVG-only aliases — do not fold into normalizeMuscleGroup. */
+const SVG_GROUP_ALIASES = {
+  lats: "back",
+  "upper-back": "back",
+  upper_back: "back",
+  hip: "abs",
+  hips: "abs",
+  obliques: "abs",
+};
+
+function asSelectedSet(selected) {
+  if (Array.isArray(selected)) return new Set(selected.map(normalizeMuscleGroup));
+  if (selected && typeof selected === "object" && selected.has) return selected;
+  const g = normalizeMuscleGroup(selected || "");
+  return g && g !== "all" ? new Set([g]) : new Set();
+}
+
+function resolveSvgGroup(raw) {
+  const key = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (!key || key === "head") return null;
+  const aliased = SVG_GROUP_ALIASES[key] || SVG_GROUP_ALIASES[key.replace(/_/g, "-")] || key;
+  return normalizeMuscleGroup(aliased);
+}
+
+function fillColor(selectedSet, key, multi, intensityMap) {
+  if (!selectedSet.has(key)) return MUTED;
+  if (!multi) return SELECTED;
+  const rank = intensityMap?.get?.(key);
+  if (rank === "low") return "rgba(62, 207, 142, 0.32)";
+  if (rank === "mid") return "rgba(62, 207, 142, 0.55)";
+  return SELECTED;
 }
 
 function useBackView(group) {
@@ -25,60 +65,146 @@ function useBackView(group) {
   return g && !FRONT_VIEW.has(g);
 }
 
-function frontFigure(active) {
-  const f = (key) => fill(active, key);
-  return `
-    <ellipse cx="32" cy="10" rx="8" ry="9" fill="${HEAD}"/>
-    <path d="M27 17.5c1.4 2.4 3 3.5 5 3.5s3.6-1.1 5-3.5c-1.4 1-3 1.6-5 1.6s-3.6-.6-5-1.6z" fill="${f("neck")}"/>
-    <path d="M16 24c2.6-3.6 6.4-5.4 16-5.4s13.4 1.8 16 5.4c1.8 2.4 2.2 5 1.8 7.4-.5 3.2-3 5.6-6.5 6.2H20.7c-3.5-.6-6-3-6.5-6.2-.4-2.4 0-5 1.8-7.4z" fill="${f("chest")}"/>
-    <path d="M12 25c-2.8 1.4-4.8 3.8-5.4 6.6-.5 1.8.2 3.6 1.8 4.2 1.8.8 3.8.2 5-1.6 1.4-2 1.8-4.2 1.4-6.2-.2-1.2-1-2.2-2.8-2.8z" fill="${f("shoulders")}"/>
-    <path d="M52 25c2.8 1.4 4.8 3.8 5.4 6.6.5 1.8-.2 3.6-1.8 4.2-1.8.8-3.8.2-5-1.6-1.4-2-1.8-4.2-1.4-6.2.2-1.2 1-2.2 2.8-2.8z" fill="${f("shoulders")}"/>
-    <path d="M9 34c-.8 3.6-.5 7.2.8 10.4.8 1.8 2.6 2.8 4.2 2.2 1.4-.6 2-2 1.8-3.6-.4-3.2-.2-6.4.5-9.4.2-1.2-.8-2.2-2.2-2.4-1.8-.4-3.8.8-5.1 3.8z" fill="${f("biceps")}"/>
-    <path d="M55 34c.8 3.6.5 7.2-.8 10.4-.8 1.8-2.6 2.8-4.2 2.2-1.4-.6-2-2-1.8-3.6.4-3.2.2-6.4-.5-9.4-.2-1.2.8-2.2 2.2-2.4 1.8-.4 3.8.8 5.1 3.8z" fill="${f("biceps")}"/>
-    <path d="M10 45c-.2 3.2.2 6.2 1.6 8.8.8 1.4 2.2 1.8 3.4 1 1-.8 1.2-1.8 1-3-.4-2.6-.4-5.2 0-7.6.2-1.2-.8-2-2-2.2-1.6-.2-3.4.6-4 3z" fill="${f("forearms")}"/>
-    <path d="M54 45c.2 3.2-.2 6.2-1.6 8.8-.8 1.4-2.2 1.8-3.4 1-1-.8-1.2-1.8-1-3 .4-2.6.4-5.2 0-7.6-.2-1.2.8-2 2-2.2 1.6-.2 3.4.6 4 3z" fill="${f("forearms")}"/>
-    <path d="M22 36h20c2 0 3.6 1.6 3.6 3.6 0 5.8-3.2 11.4-8.6 13.6-1.2.4-2.4.4-3.6 0-5.4-2.2-8.6-7.8-8.6-13.6 0-2 1.6-3.6 3.6-3.6z" fill="${f("abs")}"/>
-    <path d="M20 54c2.6-1 5.4-1.4 8.2-1.4h7.6c2.8 0 5.6.4 8.2 1.4 1.6.6 2.6 2 2.4 3.6-.4 3.6-1.8 9.2-2.8 13.6-.4 2-2.2 3.4-4.2 3.4h-9.6c-2 0-3.8-1.4-4.2-3.4-1-4.4-2.4-10-2.8-13.6-.2-1.6.8-3 2.4-3.6z" fill="${f("quads")}"/>
-    <path d="M24 58c.8 3.6 1.2 7 1.2 10 0 1.4-.8 2.6-2.2 2.6-1.2 0-2-.8-2.2-2-.8-3.6-1.2-7.2-1.2-10.4 0-1.2.8-2.2 2-2.2 1 0 1.8.8 2.4 2z" fill="${f("adductors")}"/>
-    <path d="M40 58c-.8 3.6-1.2 7-1.2 10 0 1.4.8 2.6 2.2 2.6 1.2 0 2-.8 2.2-2 .8-3.6 1.2-7.2 1.2-10.4 0-1.2-.8-2.2-2-2.2-1 0-1.8.8-2.4 2z" fill="${f("adductors")}"/>
-    <path d="M22 72c1 4 1.4 7.6 1.4 10.6 0 1.8-1.4 3.2-3 3-1.4-.2-2.4-1.4-2.4-2.6-.2-3.8-.8-7.4-1.6-10.4-.2-1.2.4-2.2 1.6-2.4 1.6-.4 3.2.2 4 2z" fill="${f("calves")}"/>
-    <path d="M42 72c-1 4-1.4 7.6-1.4 10.6 0 1.8 1.4 3.2 3 3 1.4-.2 2.4-1.4 2.4-2.6.2-3.8.8-7.4 1.6-10.4.2-1.2-.4-2.2-1.6-2.4-1.6-.4-3.2.2-4 2z" fill="${f("calves")}"/>
-  `;
+function parseSvgRoot(raw) {
+  const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  const root = doc.documentElement;
+  if (!root || root.nodeName.toLowerCase() !== "svg") {
+    throw new Error("MuscleMap: failed to parse anatomy SVG");
+  }
+  return root;
 }
 
-function backFigure(active) {
-  const f = (key) => fill(active, key);
-  return `
-    <ellipse cx="32" cy="10" rx="8" ry="9" fill="${HEAD}"/>
-    <path d="M27 17.5c1.4 2.4 3 3.5 5 3.5s3.6-1.1 5-3.5c-1.4 1-3 1.6-5 1.6s-3.6-.6-5-1.6z" fill="${f("neck")}"/>
-    <path d="M18 22c3.2-2.8 7-4 14-4s10.8 1.2 14 4c1.8 1.6 2.8 3.8 2.6 6-.4 3.6-3.2 6.4-6.6 7l-16.8 0c-3.4-.6-6.2-3.4-6.6-7-.2-2.2.8-4.4 2.6-6z" fill="${f("traps")}"/>
-    <path d="M16 30c2-.5 4.2-.7 6.4-.7h11.2c2.2 0 4.4.2 6.4.7 2.4.6 4 2.8 3.8 5.2-.4 5.4-3.6 10.6-8.8 13-1.6.8-3.4.8-5 0-5.2-2.4-8.4-7.6-8.8-13-.2-2.4 1.4-4.6 3.8-5.2z" fill="${f("back")}"/>
-    <path d="M22 46h20c1.8 0 3.2 1.4 3.2 3.2 0 3.6-1.8 7-5 8.6-1 .4-2 .4-3 0-3.2-1.6-5-5-5-8.6 0-1.8 1.4-3.2 3.2-3.2z" fill="${f("lower_back")}"/>
-    <path d="M12 25c-2.8 1.4-4.8 3.8-5.4 6.6-.5 1.8.2 3.6 1.8 4.2 1.8.8 3.8.2 5-1.6 1.4-2 1.8-4.2 1.4-6.2-.2-1.2-1-2.2-2.8-2.8z" fill="${f("shoulders")}"/>
-    <path d="M52 25c2.8 1.4 4.8 3.8 5.4 6.6.5 1.8-.2 3.6-1.8 4.2-1.8.8-3.8.2-5-1.6-1.4-2-1.8-4.2-1.4-6.2.2-1.2 1-2.2 2.8-2.8z" fill="${f("shoulders")}"/>
-    <path d="M9 34c-.8 3.6-.5 7.2.8 10.4.8 1.8 2.6 2.8 4.2 2.2 1.4-.6 2-2 1.8-3.6-.4-3.2-.2-6.4.5-9.4.2-1.2-.8-2.2-2.2-2.4-1.8-.4-3.8.8-5.1 3.8z" fill="${f("triceps")}"/>
-    <path d="M55 34c.8 3.6.5 7.2-.8 10.4-.8 1.8-2.6 2.8-4.2 2.2-1.4-.6-2-2-1.8-3.6.4-3.2.2-6.4-.5-9.4-.2-1.2.8-2.2 2.2-2.4 1.8-.4 3.8.8 5.1 3.8z" fill="${f("triceps")}"/>
-    <path d="M10 45c-.2 3.2.2 6.2 1.6 8.8.8 1.4 2.2 1.8 3.4 1 1-.8 1.2-1.8 1-3-.4-2.6-.4-5.2 0-7.6.2-1.2-.8-2-2-2.2-1.6-.2-3.4.6-4 3z" fill="${f("forearms")}"/>
-    <path d="M54 45c.2 3.2-.2 6.2-1.6 8.8-.8 1.4-2.2 1.8-3.4 1-1-.8-1.2-1.8-1-3 .4-2.6.4-5.2 0-7.6-.2-1.2.8-2 2-2.2 1.6-.2 3.4.6 4 3z" fill="${f("forearms")}"/>
-    <path d="M19 55c2.8-.8 5.8-1.2 8.8-1.2h8.4c3 0 6 .4 8.8 1.2 1.8.5 3 2 2.8 3.8-.4 3-1.6 6-3.6 7.4-1.2.8-2.6.8-3.8 0l-5-2.8-5 2.8c-1.2.8-2.6.8-3.8 0-2-1.4-3.2-4.4-3.6-7.4-.2-1.8.8-3.3 2.8-3.8z" fill="${f("glutes")}"/>
-    <path d="M20 64c2-.5 4.2-.7 6.4-.7h7.2c2.2 0 4.4.2 6.4.7 1.6.4 2.6 1.8 2.4 3.2-.6 3.8-1.8 9-2.8 12.8-.4 1.8-2 3-3.8 3h-9.2c-1.8 0-3.4-1.2-3.8-3-1-3.8-2.2-9-2.8-12.8-.2-1.4.8-2.8 2.4-3.2z" fill="${f("hamstrings")}"/>
-    <path d="M18 62c.5 3 0.8 5.8 0.8 8.4 0 1.4-.8 2.6-2 2.6-1.2 0-2-.8-2.2-2-.5-3.2-.8-6.2-1-9-.1-1.2.8-2 1.8-2 1 0 1.8.8 2.6 2z" fill="${f("abductors")}"/>
-    <path d="M46 62c-.5 3-.8 5.8-.8 8.4 0 1.4.8 2.6 2 2.6 1.2 0 2-.8 2.2-2 .5-3.2.8-6.2 1-9 .1-1.2-.8-2-1.8-2-1 0-1.8.8-2.6 2z" fill="${f("abductors")}"/>
-    <path d="M22 72c1 4 1.4 7.6 1.4 10.6 0 1.8-1.4 3.2-3 3-1.4-.2-2.4-1.4-2.4-2.6-.2-3.8-.8-7.4-1.6-10.4-.2-1.2.4-2.2 1.6-2.4 1.6-.4 3.2.2 4 2z" fill="${f("calves")}"/>
-    <path d="M42 72c-1 4-1.4 7.6-1.4 10.6 0 1.8 1.4 3.2 3 3 1.4-.2 2.4-1.4 2.4-2.6.2-3.8.8-7.4 1.6-10.4.2-1.2-.4-2.2-1.6-2.4-1.6-.4-3.2.2-4 2z" fill="${f("calves")}"/>
-  `;
+let frontTemplate = null;
+let backTemplate = null;
+
+function getTemplate(side) {
+  if (side === "back") {
+    if (!backTemplate) backTemplate = parseSvgRoot(backSvgRaw);
+    return backTemplate;
+  }
+  if (!frontTemplate) frontTemplate = parseSvgRoot(frontSvgRaw);
+  return frontTemplate;
+}
+
+function paintBodyMap(side, selectedSet, { interactive = false, multi = false, intensityMap = null } = {}) {
+  const svg = getTemplate(side).cloneNode(true);
+  svg.setAttribute("viewBox", side === "back" ? BACK_VB : FRONT_VB);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+
+  const g = svg.querySelector("g");
+  if (g) {
+    g.removeAttribute("fill");
+    g.setAttribute("stroke", "none");
+  }
+
+  for (const path of svg.querySelectorAll("path")) {
+    const rawGroup = path.getAttribute("data-muscle-group") || "";
+    const id = path.getAttribute("id") || "";
+    const isOutline = id === "body-outline" || !rawGroup;
+    const group = isOutline ? null : resolveSvgGroup(rawGroup);
+
+    if (!group) {
+      path.setAttribute("fill", OUTLINE);
+      path.setAttribute("stroke", "none");
+      path.removeAttribute("stroke-width");
+      path.removeAttribute("data-muscle-group");
+      path.removeAttribute("class");
+      path.removeAttribute("data-action");
+      path.removeAttribute("data-group");
+      path.removeAttribute("role");
+      path.removeAttribute("tabindex");
+      path.removeAttribute("aria-label");
+      continue;
+    }
+
+    path.setAttribute("stroke", STROKE);
+    path.setAttribute("stroke-width", "6");
+    path.setAttribute("stroke-linejoin", "round");
+
+    path.setAttribute("fill", fillColor(selectedSet, group, multi, intensityMap));
+    path.setAttribute("data-muscle-group", group);
+
+    if (interactive) {
+      path.setAttribute("class", "muscle-region");
+      path.setAttribute("data-action", "toggle-muscle-group");
+      path.setAttribute("data-group", group);
+      path.setAttribute("role", "button");
+      path.setAttribute("tabindex", "0");
+      path.setAttribute("aria-label", group);
+    } else {
+      path.removeAttribute("class");
+      path.removeAttribute("data-action");
+      path.removeAttribute("data-group");
+      path.removeAttribute("role");
+      path.removeAttribute("tabindex");
+      path.removeAttribute("aria-label");
+    }
+  }
+
+  return svg;
+}
+
+function serializeSvg(svg, className, { ariaHidden = true, ariaLabel = "" } = {}) {
+  const classes = ["muscle-map", className].filter(Boolean).join(" ");
+  svg.setAttribute("class", classes);
+  svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  if (ariaHidden) {
+    svg.setAttribute("aria-hidden", "true");
+    svg.removeAttribute("role");
+    svg.removeAttribute("aria-label");
+  } else {
+    svg.removeAttribute("aria-hidden");
+    svg.setAttribute("role", "img");
+    if (ariaLabel) svg.setAttribute("aria-label", ariaLabel);
+  }
+  return svg.outerHTML;
 }
 
 export function renderMuscleMap(muscleGroup = "", className = "") {
   const g = normalizeMuscleGroup(muscleGroup);
-  const active = !g || g === "all" ? "" : g;
-  const body = useBackView(g) ? backFigure(active) : frontFigure(active);
+  const selectedSet = asSelectedSet(g);
+  const side = useBackView(g) ? "back" : "front";
+  const svg = paintBodyMap(side, selectedSet, { interactive: false, multi: false });
+  return serializeSvg(svg, escapeHtml(className));
+}
 
-  return `
-    <svg class="muscle-map ${escapeHtml(className)}" viewBox="0 0 64 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      ${body}
-    </svg>
-  `;
+/** Interactive front/back body map for workout builder. */
+export function renderInteractiveBodyMap(selected = [], side = "front") {
+  const selectedSet = asSelectedSet(selected);
+  const isBack = side === "back";
+  const svg = paintBodyMap(isBack ? "back" : "front", selectedSet, {
+    interactive: true,
+    multi: true,
+  });
+  return serializeSvg(svg, "muscle-map-interactive", {
+    ariaHidden: false,
+    ariaLabel: isBack ? "Back body muscle map" : "Front body muscle map",
+  });
+}
+
+/** Multi-highlight body map (non-interactive) for analytics. */
+export function renderHighlightBodyMap(selected = [], side = "front", className = "", volumeByMuscle = null) {
+  const selectedSet = asSelectedSet(selected);
+  let intensityMap = null;
+  if (volumeByMuscle && typeof volumeByMuscle === "object") {
+    const entries = Object.entries(volumeByMuscle);
+    const max = Math.max(1, ...entries.map(([, n]) => Number(n) || 0));
+    intensityMap = new Map();
+    for (const [id, n] of entries) {
+      const ratio = (Number(n) || 0) / max;
+      const rank = ratio >= 0.66 ? "high" : ratio >= 0.33 ? "mid" : "low";
+      intensityMap.set(normalizeMuscleGroup(id), rank);
+    }
+  }
+  const isBack = side === "back";
+  const svg = paintBodyMap(isBack ? "back" : "front", selectedSet, {
+    interactive: false,
+    multi: true,
+    intensityMap,
+  });
+  return serializeSvg(svg, escapeHtml(className));
 }
 
 export function renderMuscleThumb(muscleGroup = "", size = "") {

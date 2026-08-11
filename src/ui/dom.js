@@ -30,6 +30,7 @@ export function icon(name, className = "h-5 w-5") {
     profile: `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 19a7 7 0 0 1 14 0"/></svg>`,
     copy: `<svg ${common} viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
     more: `<svg ${common} viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+    grip: `<svg ${common} viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>`,
     star: `<svg ${common} viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17.8 6.7 19.6l1-5.8L3.5 9.7l5.9-.9L12 3.5z"/></svg>`,
   };
   return icons[name] || "";
@@ -37,6 +38,12 @@ export function icon(name, className = "h-5 w-5") {
 
 export function pctLabel(pct) {
   return `${Math.round(pct * 100)}%`;
+}
+
+/** Primary action button — muted when disabled until step is valid. */
+export function primaryBtn(label, { disabled = false, className = "", type = "button", attrs = "" } = {}) {
+  const cls = ["btn", "btn-primary", className].filter(Boolean).join(" ");
+  return `<button type="${type}" class="${cls}" ${disabled ? "disabled" : ""} ${attrs}>${escapeHtml(label)}</button>`;
 }
 
 export { tagChips, renderMetaRow } from "../tags.js";

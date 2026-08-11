@@ -64,7 +64,8 @@ export function coachHints(state, opts = {}) {
   const hasWorkoutToday = (state.fitnessLog || []).some(
     (s) => s.date === today && (s.completedAt || (s.exercises || []).length > 0)
   );
-  const suppressWorkoutHint = focusBlock && isWorkoutBlock(focusBlock);
+  const suppressWorkoutHint =
+    (focusBlock && isWorkoutBlock(focusBlock)) || hasWorkoutToday;
   if (workoutBlock && !hasWorkoutToday && isToday && !suppressWorkoutHint) {
     hints.push({
       id: "workout-block",

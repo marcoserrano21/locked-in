@@ -15,7 +15,10 @@ import {
   workoutStreak,
   defaultFitnessSettings,
 } from "../fitness.js";
+import { formatDisplayDate, weekDates, todayKey } from "../dates.js";
+import { completionForDate } from "../streaks.js";
 import { escapeHtml, icon, pctLabel } from "./dom.js";
+import { copy } from "../copy/voice.js";
 
 const STATUSES = [
   { id: "yes", label: "Yes" },
@@ -71,6 +74,18 @@ function weekFitnessVolume(log = [], unit = "lb") {
   return sessionsThisWeek(log).reduce((sum, s) => sum + sessionVolume(s, unit), 0);
 }
 
+function lastWeekRecap(state, log, unit) {
+  const keys = weekDates(todayKey(), -1);
+  let sealed = 0;
+  keys.forEach((k) => {
+    if (completionForDate(state, k).complete) sealed += 1;
+  });
+  const workouts = completedSessions(log).filter((s) => keys.includes(s.date));
+  const vol = workouts.reduce((sum, s) => sum + sessionVolume(s, unit), 0);
+  const range = `${formatDisplayDate(keys[0])} – ${formatDisplayDate(keys[6])}`;
+  return { keys, sealed, workouts: workouts.length, vol, range };
+}
+
 function proofInsights(state, log, weekCount) {
   const lines = [];
   if (weekCount === 0) lines.push("0 workouts this week — schedule one session.");
@@ -118,6 +133,7 @@ export function renderProof(state, ui) {
   const weekCount = sessionsThisWeek(log).length;
   const weekVol = weekFitnessVolume(log, unit);
   const insights = proofInsights(state, log, weekCount);
+  const lastWeek = lastWeekRecap(state, log, unit);
 
   const cells = [];
   for (let i = 29; i >= 0; i--) {
@@ -150,6 +166,7 @@ export function renderProof(state, ui) {
               <p class="text-sm leading-snug">${escapeHtml(q)}</p>
               <p class="mt-1 text-[11px]" style="color:var(--mute)">${status ? status : "tap to answer"}</p>
             </span>
+            <span class="chevron-rot ${isOpen ? "is-open" : ""} shrink-0" aria-hidden="true">${icon("down", "h-4 w-4")}</span>
           </button>
           ${
             isOpen
@@ -191,6 +208,15 @@ export function renderProof(state, ui) {
     .filter(Boolean)
     .join("");
 
+  const isFirstRun =
+    dayNum <= 1 &&
+    streak === 0 &&
+    fitStreak === 0 &&
+    weekCount === 0 &&
+    lastWeek.sealed === 0 &&
+    lastWeek.workouts === 0;
+  const shareScope = ui.proofShareScope === "month" ? "month" : "week";
+
   return `
     <section class="screen">
       <header class="page-header">
@@ -199,20 +225,103 @@ export function renderProof(state, ui) {
         <p class="serif-accent mt-2 text-xl" style="color:var(--mute)">Momentum you can audit.</p>
       </header>
 
+      ${
+        isFirstRun
+          ? `<section class="panel mb-3">
+        <p class="eyebrow">Fresh start</p>
+        <h2 class="display text-3xl mt-1">Day ${Math.max(1, dayNum)} of 30</h2>
+        <p class="mt-2 text-sm" style="color:var(--mute)">Let's build your first entry. Seal a day or finish a workout — then Proof fills in.</p>
+        <button type="button" class="btn btn-primary mt-4 w-full" data-action="set-tab" data-tab="today">Open Today</button>
+      </section>`
+          : ""
+      }
+
       <div class="proof-bento" aria-label="Proof metrics">
-        <section class="proof-tile">
+        <section class="proof-tile proof-tile-span-4" aria-label="Last week recap">
+          <p class="proof-tile-label">${copy.proof?.lastWeekLabel || "Last week"}</p>
+          <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(lastWeek.range)}</p>
+          <div class="mt-3 grid grid-cols-3 gap-3">
+            <div>
+              <p class="proof-tile-value text-3xl" style="color:var(--build)">${lastWeek.sealed}/7</p>
+              <p class="text-xs" style="color:var(--mute)">sealed</p>
+            </div>
+            <div>
+              <p class="proof-tile-value text-3xl">${lastWeek.workouts}</p>
+              <p class="text-xs" style="color:var(--mute)">workouts</p>
+            </div>
+            <div>
+              <p class="proof-tile-value text-3xl">${formatVolume(lastWeek.vol)}</p>
+              <p class="text-xs" style="color:var(--mute)">volume</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="proof-tile proof-tile-span-4 !bg-transparent !shadow-none !p-0" aria-label="Day 30 review">
+          <section class="panel" id="day30-review">
+            <button type="button" class="review-head w-full !px-0" data-action="toggle-day30-section" aria-expanded="${sectionOpen}">
+              <div class="min-w-0 text-left">
+                <p class="eyebrow mb-0">Day 30 review</p>
+                <p class="mt-1 text-xs" style="color:var(--mute)">answered ${summary.answered}/${questions.length} · ${unlocked ? "unlocked" : `day ${dayNum}/30`}</p>
+              </div>
+              <span class="chevron-rot ${sectionOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
+            </button>
+            <div class="day30-body ${sectionOpen ? "is-open" : ""}">
+            <div class="day30-body-inner">
+            ${
+              sectionOpen
+                ? `
+            ${
+              earlyNudge
+                ? `<div class="banner banner-warn mb-3" role="status">
+                  Day ${dayNum}/30. Start the review now. Early answers beat a Day 30 surprise.
+                </div>`
+                : ""
+            }
+            <div class="mt-3 mb-3 flex flex-wrap gap-2 text-xs" style="color:var(--mute)">
+              <span>On track: <strong style="color:var(--build)">${summary.onTrack}</strong></span>
+              <span>At risk: <strong style="color:var(--danger)">${summary.atRisk}</strong></span>
+              <span>Plan edits: ${edits}</span>
+            </div>
+            <div class="space-y-2">${board}</div>
+            <button type="button" class="btn btn-primary mt-4 w-full" data-action="day30-coach" aria-expanded="${showCoach}">
+              ${showCoach ? "Hide adjust notes" : "Generate adjust notes"}
+            </button>
+            ${
+              showCoach
+                ? `<div class="mt-3 rounded-2xl px-3 py-3" style="background:var(--bg-elev)">
+                    <p class="eyebrow mb-2">Adjust notes</p>
+                    ${
+                      weakNotes
+                        ? `<ul class="space-y-3">${weakNotes}</ul>`
+                        : `<p class="text-sm" style="color:var(--mute)">No weak answers yet. Mark a no or partial to unlock coaching.</p>`
+                    }
+                  </div>`
+                : ""
+            }`
+                : ""
+            }
+            </div>
+            </div>
+          </section>
+        </section>
+
+        ${
+          isFirstRun
+            ? ""
+            : `
+        <section class="proof-tile proof-tile-span-2">
           <p class="proof-tile-label">Current streak</p>
           <p class="proof-tile-value" style="color:var(--build)">${streak}</p>
           <p class="mt-2 text-xs" style="color:var(--mute)">Longest ${longest}</p>
         </section>
 
-        <section class="proof-tile">
+        <section class="proof-tile proof-tile-span-2">
           <p class="proof-tile-label">Fitness pulse</p>
           <p class="proof-tile-value">${fitStreak}</p>
           <p class="mt-2 text-xs" style="color:var(--mute)">${weekCount} this week · ${formatVolume(weekVol)} vol</p>
         </section>
 
-        <section class="proof-tile proof-tile-wide">
+        <section class="proof-tile proof-tile-span-4">
           <p class="proof-tile-label">This week split</p>
           <div class="mt-3 space-y-3">
             <div>
@@ -220,85 +329,39 @@ export function renderProof(state, ui) {
               <div class="day-rail"><div class="day-rail-fill" style="width:${Math.round(split.buildPct * 100)}%"></div></div>
             </div>
             <div>
-              <div class="mb-1 flex justify-between text-sm"><span>Maintain</span><span style="color:var(--maintain)">${pctLabel(split.maintainPct)}</span></div>
-              <div class="day-rail"><div class="day-rail-fill maintain" style="width:${Math.round(split.maintainPct * 100)}%"></div></div>
+              <div class="mb-1 flex justify-between text-sm"><span>Maintain</span><span style="color:var(--data)">${pctLabel(split.maintainPct)}</span></div>
+              <div class="day-rail"><div class="day-rail-fill data" style="width:${Math.round(split.maintainPct * 100)}%"></div></div>
             </div>
           </div>
         </section>
 
-        <section class="proof-tile proof-tile-wide">
+        <section class="proof-tile proof-tile-span-4">
           <p class="proof-tile-label">Last 30 days</p>
           <div class="mt-3 grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${cells.join("")}</div>
         </section>
 
-        <section class="proof-tile">
+        <section class="proof-tile proof-tile-span-2">
           <p class="proof-tile-label">Last 14 days</p>
           <div class="mt-3 flex h-12 items-end gap-1" aria-hidden="true">${spark.join("")}</div>
         </section>
 
-        <section class="proof-tile">
+        <section class="proof-tile proof-tile-span-2">
           <p class="proof-tile-label">Insight</p>
           <ul class="proof-insight-list">
             ${insights.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
           </ul>
-        </section>
+        </section>`
+        }
 
-        <section class="proof-tile proof-tile-wide">
+        <section class="proof-tile proof-tile-span-4">
           <p class="proof-tile-label mb-3">Share proof</p>
-          <div class="flex flex-col gap-2">
-            <button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="week">Share this week</button>
-            <button type="button" class="btn w-full !min-h-11" data-action="share-progress" data-scope="month">Share last 30 days</button>
+          <div class="segment mb-3" role="tablist" aria-label="Share range">
+            <button type="button" class="segment-btn ${shareScope === "week" ? "is-active accent" : ""}" data-action="proof-share-scope" data-scope="week" role="tab" aria-selected="${shareScope === "week"}" tabindex="${shareScope === "week" ? "0" : "-1"}">This week</button>
+            <button type="button" class="segment-btn ${shareScope === "month" ? "is-active accent" : ""}" data-action="proof-share-scope" data-scope="month" role="tab" aria-selected="${shareScope === "month"}" tabindex="${shareScope === "month" ? "0" : "-1"}">Last 30 days</button>
           </div>
+          <button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="${shareScope === "month" ? "month" : "week"}">Share</button>
         </section>
       </div>
-
-      ${
-        earlyNudge
-          ? `<div class="banner banner-warn" role="status">
-              Day ${dayNum}/30. Start the review now. Early answers beat a Day 30 surprise.
-              ${summary.unanswered ? ` ${summary.unanswered} still unanswered.` : ""}
-              ${summary.atRisk ? ` At risk signals: ${summary.atRisk}.` : ""}
-            </div>`
-          : ""
-      }
-
-      <section class="panel" id="day30-review">
-        <button type="button" class="review-head w-full !px-0" data-action="toggle-day30-section" aria-expanded="${sectionOpen}">
-          <div class="min-w-0 text-left">
-            <p class="eyebrow mb-0">Day 30 review</p>
-            <p class="mt-1 text-xs" style="color:var(--mute)">answered ${summary.answered}/${questions.length} · ${unlocked ? "unlocked" : `day ${dayNum}/30`}</p>
-          </div>
-          <span class="chevron-rot ${sectionOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
-        </button>
-        <div class="day30-body ${sectionOpen ? "is-open" : ""}">
-        ${
-          sectionOpen
-            ? `
-        <div class="mt-3 mb-3 flex flex-wrap gap-2 text-xs" style="color:var(--mute)">
-          <span>On track: <strong style="color:var(--build)">${summary.onTrack}</strong></span>
-          <span>At risk: <strong style="color:var(--maintain)">${summary.atRisk}</strong></span>
-          <span>Plan edits: ${edits}</span>
-        </div>
-        <div class="space-y-2">${board}</div>
-        <button type="button" class="btn btn-primary mt-4 w-full" data-action="day30-coach" aria-expanded="${showCoach}">
-          ${showCoach ? "Hide adjust notes" : "Generate adjust notes"}
-        </button>
-        ${
-          showCoach
-            ? `<div class="mt-3 rounded-2xl px-3 py-3" style="background:var(--bg-elev)">
-                <p class="eyebrow mb-2">Adjust notes</p>
-                ${
-                  weakNotes
-                    ? `<ul class="space-y-3">${weakNotes}</ul>`
-                    : `<p class="text-sm" style="color:var(--mute)">No weak answers yet. Mark a no or partial to unlock coaching.</p>`
-                }
-              </div>`
-            : ""
-        }`
-            : ""
-        }
-        </div>
-      </section>
     </section>
   `;
 }

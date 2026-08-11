@@ -1,5 +1,6 @@
 import { escapeHtml, icon, renderMetaRow } from "../dom.js";
 import { parseTimeToMinutes, todayKey, nowMinutes } from "../../dates.js";
+import { isDone } from "../../streaks.js";
 
 export function formatTimeShort(timeStr) {
   const mins = parseTimeToMinutes(timeStr);
@@ -25,8 +26,8 @@ function sortBlocksByTime(blocks) {
 function renderSpine(timeStr) {
   return `
     <div class="schedule-spine" aria-hidden="true">
-      <span class="schedule-dot"></span>
       <span class="schedule-time">${escapeHtml(formatTimeShort(timeStr))}</span>
+      <span class="schedule-dot"></span>
     </div>`;
 }
 
@@ -35,34 +36,40 @@ function renderTrackCard(block, ctx) {
   const done = isDone(state, selectedDate, block.id);
   const isFocus = focusId && block.id === focusId;
   return `
-    <button type="button" class="schedule-card ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-action="toggle-block" data-id="${escapeHtml(block.id)}" data-date="${selectedDate}" data-block-id="${escapeHtml(block.id)}" ${canEdit ? "" : "disabled"} aria-pressed="${done}">
+    <div class="schedule-card ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-block-id="${escapeHtml(block.id)}">
       <div class="min-w-0 flex-1 text-left">
         <p class="task-title !min-h-0">${escapeHtml(block.label)}</p>
         ${renderMetaRow("", block.tags, block.soft)}
       </div>
-      <span class="check shrink-0 ${done ? "is-done" : ""}" aria-hidden="true">${done ? icon("check", "h-4 w-4") : ""}</span>
-    </button>`;
+    </div>`;
 }
 
 function renderEditCard(block, ctx) {
-  const { mode, day, date, blocks } = ctx;
+  const planMode = ctx.planMode || ctx.mode || "template";
+  const { day, date, blocks, openBlockMenuIndex } = ctx;
   const realIndex = blocks.indexOf(block);
+  const menuOpen = openBlockMenuIndex != null && Number(openBlockMenuIndex) === realIndex;
   return `
     <div class="schedule-card schedule-card-edit">
-      <div class="flex items-start gap-2">
-        <div class="min-w-0 flex-1">
-          <p class="task-title !min-h-0">${escapeHtml(block.label)}</p>
-          ${renderMetaRow("", block.tags, block.soft)}
-          ${block.details ? `<p class="mt-1 text-xs" style="color:var(--text-soft)">${escapeHtml(block.details)}</p>` : ""}
-        </div>
+      <p class="task-title !min-h-0">${escapeHtml(block.label)}</p>
+      ${renderMetaRow("", block.tags, block.soft)}
+      ${block.details ? `<p class="mt-1 text-xs" style="color:var(--text-soft)">${escapeHtml(block.details)}</p>` : ""}
+      <div class="plan-actions schedule-edit-actions">
         <div class="flex gap-1 shrink-0">
-          <button type="button" class="icon-btn" data-action="move-block" data-mode="${mode}" data-day="${day}" data-date="${date}" data-index="${realIndex}" data-dir="-1" aria-label="Move up" ${realIndex === 0 ? "disabled" : ""}>${icon("up", "h-4 w-4")}</button>
-          <button type="button" class="icon-btn" data-action="move-block" data-mode="${mode}" data-day="${day}" data-date="${date}" data-index="${realIndex}" data-dir="1" aria-label="Move down" ${realIndex === blocks.length - 1 ? "disabled" : ""}>${icon("down", "h-4 w-4")}</button>
+          <button type="button" class="icon-btn icon-btn-sm" data-action="move-block" data-mode="${planMode}" data-day="${day}" data-date="${date}" data-index="${realIndex}" data-dir="-1" aria-label="Move up" ${realIndex === 0 ? "disabled" : ""}>${icon("up", "h-3.5 w-3.5")}</button>
+          <button type="button" class="icon-btn icon-btn-sm" data-action="move-block" data-mode="${planMode}" data-day="${day}" data-date="${date}" data-index="${realIndex}" data-dir="1" aria-label="Move down" ${realIndex === blocks.length - 1 ? "disabled" : ""}>${icon("down", "h-3.5 w-3.5")}</button>
         </div>
-      </div>
-      <div class="plan-actions">
-        <button type="button" class="btn flex-1 !text-xs" data-action="edit-block" data-mode="${mode}" data-day="${day}" data-date="${date}" data-index="${realIndex}">Edit</button>
-        <button type="button" class="btn btn-danger !text-xs" data-action="delete-block" data-mode="${mode}" data-day="${day}" data-date="${date}" data-index="${realIndex}">Delete</button>
+        <div class="relative ml-auto">
+          <button type="button" class="icon-btn icon-btn-sm" data-action="toggle-block-menu" data-index="${realIndex}" aria-expanded="${menuOpen}" aria-label="Block options">${icon("more", "h-3.5 w-3.5")}</button>
+          ${
+            menuOpen
+              ? `<div class="fitness-session-menu" role="menu">
+            <button type="button" role="menuitem" data-action="edit-block" data-mode="${planMode}" data-day="${day}" data-date="${date}" data-index="${realIndex}">Edit</button>
+            <button type="button" role="menuitem" class="text-danger" data-action="delete-block" data-mode="${planMode}" data-day="${day}" data-date="${date}" data-index="${realIndex}">Delete</button>
+          </div>`
+              : ""
+          }
+        </div>
       </div>
     </div>`;
 }
@@ -70,7 +77,7 @@ function renderEditCard(block, ctx) {
 /**
  * Unified spine + card timeline for Track and Edit.
  * @param {object[]} blocks
- * @param {object} ctx - mode: "track" | "edit", plus mode-specific fields
+ * @param {object} ctx - mode: "track" | "edit" (UI variant); planMode: "template" | "date" for plan actions
  */
 export function renderScheduleTimeline(blocks, ctx = {}) {
   const mode = ctx.mode || "track";

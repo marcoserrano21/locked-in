@@ -1,4 +1,4 @@
-import { escapeHtml } from "./dom.js";
+import { escapeHtml, primaryBtn } from "./dom.js";
 import { DAY_NAMES } from "../schedule.js";
 import { HUSTLE_PACKS } from "../hustle-packs.js";
 
@@ -10,6 +10,7 @@ export function renderSetupWizard(state, ui) {
   const modules = ui.setupModules || { fitness: true, money: false, hustle: false };
   const packId = ui.setupHustlePack || "blank";
   const blockPreset = ui.setupBlockPreset || "morning";
+  const buildDaysOk = buildDays.length > 0;
 
   if (step === 1) {
     return `
@@ -25,7 +26,7 @@ export function renderSetupWizard(state, ui) {
             }).join("")}
           </div>
           <div class="flex gap-2 mt-5">
-            <button type="button" class="btn btn-primary flex-1" data-action="setup-wizard-next">Continue</button>
+            ${primaryBtn("Continue", { disabled: !buildDaysOk, className: "flex-1 w-full", attrs: 'data-action="setup-wizard-next"' })}
           </div>
         </div>
       </div>`;
@@ -58,7 +59,7 @@ export function renderSetupWizard(state, ui) {
           </div>
           <div class="flex gap-2 mt-5">
             <button type="button" class="btn flex-1" data-action="setup-wizard-back">Back</button>
-            <button type="button" class="btn btn-primary flex-1" data-action="setup-wizard-next">Continue</button>
+            ${primaryBtn("Continue", { className: "flex-1", attrs: 'data-action="setup-wizard-next"' })}
           </div>
         </div>
       </div>`;
@@ -107,7 +108,7 @@ export function renderSetupWizard(state, ui) {
           }
           <div class="flex gap-2 mt-5">
             <button type="button" class="btn flex-1" data-action="setup-wizard-back">Back</button>
-            <button type="button" class="btn btn-primary flex-1" data-action="setup-wizard-next">Continue</button>
+            ${primaryBtn("Continue", { className: "flex-1", attrs: 'data-action="setup-wizard-next"' })}
           </div>
         </div>
       </div>`;
@@ -128,7 +129,7 @@ export function renderSetupWizard(state, ui) {
         </ul>
         <div class="flex gap-2 mt-5">
           <button type="button" class="btn flex-1" data-action="setup-wizard-back">Back</button>
-          <button type="button" class="btn btn-primary flex-1" data-action="setup-wizard-finish">Finish setup</button>
+          ${primaryBtn("Finish setup", { className: "flex-1", attrs: 'data-action="setup-wizard-finish"' })}
         </div>
       </div>
     </div>`;

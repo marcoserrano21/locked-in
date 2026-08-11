@@ -4,7 +4,8 @@ import { BLANK_DAY30 } from "../constants.js";
 
 export { BLANK_DAY30 };
 
-export function renderDay30Editor(state) {
+export function renderDay30Editor(state, opts = {}) {
+  const embedded = Boolean(opts.embedded);
   const questions = state.day30Questions || [];
   const rows = questions
     .map(
@@ -23,12 +24,12 @@ export function renderDay30Editor(state) {
     )
     .join("");
 
-  return `
-    <section class="panel space-y-2">
-      <div class="flex items-center justify-between gap-2">
+  const body = `
+      ${embedded ? "" : `<div class="flex items-center justify-between gap-2">
         <p class="eyebrow mb-0">Day 30 review</p>
         <button type="button" class="btn !min-h-11 !text-xs" data-action="set-tab" data-tab="proof">Answer on Proof</button>
-      </div>
+      </div>`}
+      ${embedded ? `<button type="button" class="btn w-full !min-h-11 !text-xs mb-2" data-action="set-tab" data-tab="proof">Answer on Proof</button>` : ""}
       <div class="space-y-2">${rows || `<p class="text-sm" style="color:var(--mute)">No questions yet.</p>`}</div>
       ${
         questions.length < 12
@@ -38,6 +39,13 @@ export function renderDay30Editor(state) {
             </form>`
           : `<p class="text-xs" style="color:var(--mute)">Max 12 questions.</p>`
       }
+  `;
+
+  if (embedded) return `<div class="space-y-2 mt-2">${body}</div>`;
+
+  return `
+    <section class="panel space-y-2">
+      ${body}
     </section>
   `;
 }
