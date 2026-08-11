@@ -1,13 +1,19 @@
 import playbook from "../../content/freelance.playbook.json";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
+import { renderFitness } from "./Fitness.js";
 
 const STATUSES = ["sent", "replied", "call", "won", "lost"];
-const TABS = [
+const HUSTLE_TABS = [
   { id: "flow", label: "Flow" },
   { id: "ramp", label: "Ramp" },
   { id: "scripts", label: "Scripts" },
   { id: "log", label: "Log" },
+];
+
+const VIEW_TABS = [
+  { id: "fitness", label: "Fitness" },
+  { id: "hustle", label: "Hustle" },
 ];
 
 const SCRIPT_KEYS = [
@@ -44,7 +50,7 @@ function progressRail(done, total, label) {
   `;
 }
 
-export function renderFreelance(state, ui) {
+function renderHustlePanel(state, ui) {
   const log = state.outreachLog || [];
   const checks = state.hustleChecks || {};
   const tab = ui.hustleTab || "flow";
@@ -61,7 +67,7 @@ export function renderFreelance(state, ui) {
 
   const tabBar = `
     <div class="segment" role="tablist" aria-label="Hustle sections">
-      ${TABS.map(
+      ${HUSTLE_TABS.map(
         (t) =>
           `<button type="button" class="segment-btn ${tab === t.id ? "is-active accent" : ""}" data-action="hustle-tab" data-tab="${t.id}" role="tab" aria-selected="${tab === t.id}">${t.label}</button>`
       ).join("")}
@@ -181,43 +187,64 @@ export function renderFreelance(state, ui) {
   }
 
   return `
+    <section class="panel space-y-3">
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <p class="text-xs" style="color:var(--mute)">this week</p>
+          <p class="display text-3xl" style="color:var(--build)">${sent}</p>
+        </div>
+        <div>
+          <p class="text-xs" style="color:var(--mute)">replies+</p>
+          <p class="display text-3xl">${replies}</p>
+        </div>
+        <div>
+          <p class="text-xs" style="color:var(--mute)">won</p>
+          <p class="display text-3xl">${won}</p>
+        </div>
+      </div>
+      ${progressRail(flowDone, playbook.weeklyFlow.length, "Weekly flow")}
+      ${progressRail(rampDone, playbook.ramp.length, "4-week ramp")}
+    </section>
+
+    <section class="panel-quiet">
+      <p class="eyebrow mb-1">Brief</p>
+      <p class="text-sm font-semibold">${escapeHtml(playbook.niche)}</p>
+      <p class="mt-1 text-sm" style="color:var(--text-soft)">${escapeHtml(playbook.proofPrimary.line)}</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <a class="btn !min-h-11 !text-xs" href="${escapeHtml(portfolio)}" target="_blank" rel="noopener">Portfolio</a>
+        <a class="btn !min-h-11 !text-xs" href="${escapeHtml(linkedin)}" target="_blank" rel="noopener">LinkedIn</a>
+      </div>
+    </section>
+
+    ${tabBar}
+    ${panel}
+  `;
+}
+
+export function renderFreelance(state, ui) {
+  const view = ui.hustleView || "fitness";
+  const title = view === "fitness" ? "Growth" : "Command center";
+  const subtitle = view === "fitness" ? "Fitness tracker" : "Hustle";
+
+  const viewToggle = `
+    <div class="segment mb-3" role="tablist" aria-label="Growth views">
+      ${VIEW_TABS.map(
+        (t) =>
+          `<button type="button" class="segment-btn ${view === t.id ? "is-active accent" : ""}" data-action="hustle-view" data-view="${t.id}" role="tab" aria-selected="${view === t.id}">${t.label}</button>`
+      ).join("")}
+    </div>
+  `;
+
+  const body = view === "fitness" ? renderFitness(state, ui) : renderHustlePanel(state, ui);
+
+  return `
     <section class="screen">
       <header class="page-header">
-        <p class="eyebrow">Hustle</p>
-        <h1 class="display">Command center</h1>
+        <p class="eyebrow">${escapeHtml(subtitle)}</p>
+        <h1 class="display">${escapeHtml(title)}</h1>
       </header>
-
-      <section class="panel space-y-3">
-        <div class="grid grid-cols-3 gap-3">
-          <div>
-            <p class="text-xs" style="color:var(--mute)">this week</p>
-            <p class="display text-3xl" style="color:var(--build)">${sent}</p>
-          </div>
-          <div>
-            <p class="text-xs" style="color:var(--mute)">replies+</p>
-            <p class="display text-3xl">${replies}</p>
-          </div>
-          <div>
-            <p class="text-xs" style="color:var(--mute)">won</p>
-            <p class="display text-3xl">${won}</p>
-          </div>
-        </div>
-        ${progressRail(flowDone, playbook.weeklyFlow.length, "Weekly flow")}
-        ${progressRail(rampDone, playbook.ramp.length, "4-week ramp")}
-      </section>
-
-      <section class="panel-quiet">
-        <p class="eyebrow mb-1">Brief</p>
-        <p class="text-sm font-semibold">${escapeHtml(playbook.niche)}</p>
-        <p class="mt-1 text-sm" style="color:var(--text-soft)">${escapeHtml(playbook.proofPrimary.line)}</p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <a class="btn !min-h-11 !text-xs" href="${escapeHtml(portfolio)}" target="_blank" rel="noopener">Portfolio</a>
-          <a class="btn !min-h-11 !text-xs" href="${escapeHtml(linkedin)}" target="_blank" rel="noopener">LinkedIn</a>
-        </div>
-      </section>
-
-      ${tabBar}
-      ${panel}
+      ${viewToggle}
+      ${body}
     </section>
   `;
 }
@@ -278,4 +305,3 @@ export function renderOutreachEditorModal(ui) {
     </div>
   `;
 }
-

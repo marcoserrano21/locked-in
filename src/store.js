@@ -2,6 +2,16 @@ import { cloneSeedSchedule, CHALLENGE_META, uid } from "./schedule.js";
 import { todayKey } from "./dates.js";
 import eventsSeed from "../content/events.seed.json";
 import { validateBackupText } from "./backup.js";
+import {
+  activeSessionForDate,
+  defaultFitnessSettings,
+  findExerciseCatalog,
+  makeExercise,
+  makeSet,
+  makeWorkoutSession,
+  sessionVolume,
+  touchRecentExercise,
+} from "./fitness.js";
 
 const STORE_KEY = "marco-tracker-v4";
 const LEGACY_V3 = "marco-tracker-v3";
@@ -14,10 +24,14 @@ const listeners = new Set();
 let appRoot = null;
 
 export let state = null;
+export let needsWelcome = false;
+
 export let ui = {
   tab: "today",
   todayMode: "track",
+  hustleView: "fitness",
   hustleTab: "flow",
+  fitnessTab: "today",
   day30Open: null,
   day30Coach: false,
   toast: null,
@@ -57,6 +71,8 @@ function defaultProfileData() {
     day30Answers: {},
     day30Questions: [...(CHALLENGE_META.reviewQuestions || [])],
     scheduleEdits: [],
+    fitnessLog: [],
+    fitnessSettings: defaultFitnessSettings(),
     settings: {
       uberCap: CHALLENGE_META.uberCap,
       uberSoftStop: CHALLENGE_META.uberSoftStop,
@@ -88,6 +104,8 @@ function blankProfileData(displayName = "New track") {
     hustleChecks: {},
     day30Answers: {},
     scheduleEdits: [],
+    fitnessLog: [],
+    fitnessSettings: defaultFitnessSettings(),
     settings: {
       ...base.settings,
       displayName,
@@ -130,6 +148,8 @@ function normalizeProfileData(parsed = {}) {
         ? parsed.day30Questions
         : [...(CHALLENGE_META.reviewQuestions || [])],
     scheduleEdits: Array.isArray(parsed.scheduleEdits) ? parsed.scheduleEdits : [],
+    fitnessLog: Array.isArray(parsed.fitnessLog) ? parsed.fitnessLog : [],
+    fitnessSettings: { ...defaultFitnessSettings(), ...(parsed.fitnessSettings || {}) },
     settings: { ...base.settings, ...(parsed.settings || {}) },
   };
   delete merged.version;
@@ -258,10 +278,20 @@ export function loadState() {
     console.warn("load failed", error);
   }
 
-  const profile = makeProfile("marco", "Marco", defaultProfileData());
+  const isDemo = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "marco";
+  if (isDemo) {
+    const profile = makeProfile("marco", "Marco", defaultProfileData());
+    appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
+    syncActiveFromRoot();
+    persist();
+    return state;
+  }
+
+  needsWelcome = true;
+  const profile = makeProfile("blank", "", blankProfileData(""));
+  profile.settings.displayName = "";
   appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
   syncActiveFromRoot();
-  persist();
   return state;
 }
 
@@ -593,6 +623,184 @@ export function setDay30Answer(questionId, answer) {
   }));
 }
 
+export function completeWelcome(displayName, focus = "both") {
+  const name = String(displayName || "").trim() || "My track";
+  patchState((s) => ({
+    ...s,
+    settings: { ...s.settings, displayName: name },
+  }));
+  if (appRoot?.profiles?.[appRoot.activeProfileId]) {
+    appRoot.profiles[appRoot.activeProfileId].preset = "blank";
+  }
+  needsWelcome = false;
+  const tab =
+    focus === "fitness" ? "freelance" : focus === "schedule" ? "today" : "today";
+  const hustleView = focus === "fitness" || focus === "both" ? "fitness" : "hustle";
+  setUi({
+    modal: null,
+    welcomeStep: 1,
+    welcomeName: "",
+    welcomeFocus: "both",
+    tab,
+    hustleView,
+    fitnessTab: "today",
+    todayMode: focus === "schedule" ? "edit" : "track",
+  });
+  persist();
+  notify();
+}
+
+export function loadMarcoDemo() {
+  const profile = makeProfile("marco", "Marco", defaultProfileData());
+  appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
+  syncActiveFromRoot();
+  needsWelcome = false;
+  setUi({ modal: null, tab: "today", todayMode: "track", hustleView: "hustle" });
+  persist();
+  notify();
+}
+
+function mapFitnessLog(log, sessionId, mapper) {
+  return (log || []).map((session) => {
+    if (session.id !== sessionId) return session;
+    return mapper(session);
+  });
+}
+
+function mapExercise(session, exerciseId, mapper) {
+  return {
+    ...session,
+    exercises: (session.exercises || []).map((ex) => {
+      if (ex.id !== exerciseId) return ex;
+      return mapper(ex);
+    }),
+  };
+}
+
+export function startWorkout(date = todayKey()) {
+  patchState((s) => {
+    const log = s.fitnessLog || [];
+    if (activeSessionForDate(log, date)) return s;
+    return {
+      ...s,
+      fitnessLog: [makeWorkoutSession(date), ...log],
+    };
+  });
+}
+
+export function addExerciseToSession(sessionId, name, muscleGroup = "") {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return;
+  const catalog = findExerciseCatalog(trimmed);
+  patchState((s) => {
+    const unitPref = s.fitnessSettings?.preferredUnit || "lb";
+    const group = muscleGroup || catalog?.muscleGroup || "";
+    return {
+      ...s,
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        recentExercises: touchRecentExercise(s.fitnessSettings, trimmed),
+      },
+      fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => ({
+        ...session,
+        exercises: [...(session.exercises || []), makeExercise(trimmed, group, unitPref)],
+      })),
+    };
+  });
+}
+
+export function addFitnessSet(sessionId, exerciseId) {
+  patchState((s) => {
+    const unit = s.fitnessSettings?.preferredUnit || "lb";
+    return {
+      ...s,
+      fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
+        mapExercise(session, exerciseId, (ex) => ({
+          ...ex,
+          sets: [...(ex.sets || []), makeSet(unit)],
+        }))
+      ),
+    };
+  });
+}
+
+export function updateFitnessSet(sessionId, exerciseId, setId, patch) {
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
+      mapExercise(session, exerciseId, (ex) => ({
+        ...ex,
+        sets: (ex.sets || []).map((set) => (set.id === setId ? { ...set, ...patch } : set)),
+      }))
+    ),
+  }));
+}
+
+export function toggleFitnessSetDone(sessionId, exerciseId, setId) {
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
+      mapExercise(session, exerciseId, (ex) => ({
+        ...ex,
+        sets: (ex.sets || []).map((set) =>
+          set.id === setId ? { ...set, done: !set.done } : set
+        ),
+      }))
+    ),
+  }));
+}
+
+export function deleteFitnessSet(sessionId, exerciseId, setId) {
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
+      mapExercise(session, exerciseId, (ex) => ({
+        ...ex,
+        sets: (ex.sets || []).filter((set) => set.id !== setId),
+      }))
+    ),
+  }));
+}
+
+export function deleteFitnessExercise(sessionId, exerciseId) {
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => ({
+      ...session,
+      exercises: (session.exercises || []).filter((ex) => ex.id !== exerciseId),
+    })),
+  }));
+}
+
+export function completeWorkout(sessionId) {
+  let payload = null;
+  patchState((s) => {
+    const unit = s.fitnessSettings?.preferredUnit || "lb";
+    const session = (s.fitnessLog || []).find((w) => w.id === sessionId);
+    if (!session) return s;
+    payload = {
+      volume: sessionVolume(session, unit),
+      unit,
+      exerciseCount: (session.exercises || []).length,
+    };
+    return {
+      ...s,
+      fitnessLog: (s.fitnessLog || []).map((w) =>
+        w.id === sessionId ? { ...w, completedAt: new Date().toISOString() } : w
+      ),
+    };
+  });
+  return payload;
+}
+
+export function deleteWorkout(sessionId) {
+  patchState((s) => ({
+    ...s,
+    fitnessLog: (s.fitnessLog || []).filter((w) => w.id !== sessionId),
+  }));
+}
+
 export function resetApp() {
   try {
     localStorage.removeItem(STORE_KEY);
@@ -605,10 +813,13 @@ export function resetApp() {
   const profile = makeProfile("marco", "Marco", defaultProfileData());
   appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
   syncActiveFromRoot();
+  needsWelcome = false;
   setUi({
     tab: "today",
     todayMode: "track",
+    hustleView: "fitness",
     hustleTab: "flow",
+    fitnessTab: "today",
     selectedDay: new Date().getDay(),
     selectedDate: todayKey(),
     overrideDate: todayKey(),

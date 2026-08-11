@@ -49,6 +49,23 @@ export function coachHints(state, opts = {}) {
     }
   }
 
+  const workoutBlock = blocks.find((b) => {
+    const label = String(b.label || "").toLowerCase();
+    const tags = (b.tags || []).map((t) => String(t.label || "").toLowerCase());
+    return tags.includes("workout") || /workout|gym|lift|train/.test(label);
+  });
+  const hasWorkoutToday = (state.fitnessLog || []).some(
+    (s) => s.date === today && (s.completedAt || (s.exercises || []).length > 0)
+  );
+  if (workoutBlock && !hasWorkoutToday && isToday) {
+    hints.push({
+      id: "workout-block",
+      message: "Workout block is on today. Log the session while it is fresh.",
+      action: "open-fitness-today",
+      actionLabel: "Open Fitness",
+    });
+  }
+
   if (soft > 0 && used >= soft * 0.9) {
     hints.push({
       id: "miles-soft",
@@ -76,7 +93,13 @@ export function coachHints(state, opts = {}) {
   }
 
   if (completion.complete) {
-    return hints.filter((h) => h.id === "monday-flow" || h.id === "miles-soft" || h.id === "day30-early");
+    return hints.filter(
+      (h) =>
+        h.id === "monday-flow" ||
+        h.id === "miles-soft" ||
+        h.id === "day30-early" ||
+        h.id === "workout-block"
+    );
   }
 
   return hints;
