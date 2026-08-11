@@ -1,4 +1,4 @@
-const CACHE = "marco-locked-in-v5";
+const CACHE = "marco-locked-in-v6";
 
 const PRECACHE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon.svg"];
 

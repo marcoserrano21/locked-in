@@ -167,6 +167,12 @@ export function renderProof(state, ui) {
         </div>
       </section>
 
+      <section class="panel flex flex-col gap-2">
+        <p class="eyebrow mb-0">Share proof</p>
+        <button type="button" class="btn btn-primary w-full" data-action="share-progress" data-scope="week">Share this week</button>
+        <button type="button" class="btn w-full" data-action="share-progress" data-scope="month">Share last 30 days</button>
+      </section>
+
       <section class="panel">
         <p class="eyebrow mb-3">Last 30 days</p>
         <div class="grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${cells.join("")}</div>

@@ -165,3 +165,60 @@ export function findExerciseCatalog(name) {
   const q = String(name || "").trim().toLowerCase();
   return exercisesSeed.find((ex) => ex.name.toLowerCase() === q) || null;
 }
+
+export function musclesHitRecently(log = [], withinSessions = 3) {
+  const sessions = completedSessions(log).slice(0, withinSessions);
+  const hit = new Set();
+  sessions.forEach((s) => {
+    (s.exercises || []).forEach((ex) => {
+      if (ex.muscleGroup) hit.add(ex.muscleGroup);
+    });
+  });
+  return hit;
+}
+
+export function suggestNextExercises(state, limit = 4) {
+  const log = state.fitnessLog || [];
+  const hit = musclesHitRecently(log, 3);
+  const allGroups = ["chest", "back", "legs", "shoulders", "arms", "core"];
+  const freshGroups = allGroups.filter((g) => !hit.has(g));
+
+  const suggestions = [];
+  const lastSession = completedSessions(log)[0];
+  if (lastSession?.exercises?.length) {
+    suggestions.push({
+      type: "repeat",
+      label: "Repeat last session",
+      exercises: lastSession.exercises.map((e) => e.name),
+    });
+  }
+
+  freshGroups.slice(0, 2).forEach((group) => {
+    const pick = exercisesSeed.find((ex) => ex.muscleGroup === group);
+    if (pick) {
+      suggestions.push({
+        type: "muscle",
+        label: `${pick.name}`,
+        muscleGroup: group,
+        hint: `${group} fresh`,
+      });
+    }
+  });
+
+  exercisesSeed.forEach((ex) => {
+    if (suggestions.length >= limit) return;
+    if (freshGroups.includes(ex.muscleGroup) && !suggestions.find((s) => s.label === ex.name)) {
+      suggestions.push({ type: "muscle", label: ex.name, muscleGroup: ex.muscleGroup, hint: "Suggested" });
+    }
+  });
+
+  return suggestions.slice(0, limit);
+}
+
+export function progressiveOverloadHint(log, exerciseName, unit = "lb") {
+  const prev = previousPerformance(log, exerciseName);
+  if (!prev) return null;
+  const nextWeight = Math.round((Number(prev.weight) || 0) + 5);
+  return `Try ${nextWeight} ${prev.unit || unit} × ${prev.reps}`;
+}
+

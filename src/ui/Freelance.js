@@ -223,10 +223,13 @@ function renderHustlePanel(state, ui) {
 
 export function renderFreelance(state, ui) {
   const view = ui.hustleView || "fitness";
+  const simple = state.settings?.appMode !== "full";
   const title = view === "fitness" ? "Growth" : "Command center";
   const subtitle = view === "fitness" ? "Fitness tracker" : "Hustle";
 
-  const viewToggle = `
+  const viewToggle = simple
+    ? ""
+    : `
     <div class="segment mb-3" role="tablist" aria-label="Growth views">
       ${VIEW_TABS.map(
         (t) =>
@@ -235,7 +238,8 @@ export function renderFreelance(state, ui) {
     </div>
   `;
 
-  const body = view === "fitness" ? renderFitness(state, ui) : renderHustlePanel(state, ui);
+  const activeView = simple ? "fitness" : view;
+  const body = activeView === "fitness" ? renderFitness(state, ui) : renderHustlePanel(state, ui);
 
   return `
     <section class="screen">

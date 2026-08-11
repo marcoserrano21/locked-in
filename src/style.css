@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hide scrollbars app-wide; scrolling still works */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
@@ -299,8 +308,8 @@ body {
   }
 
   .icon-btn:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: none;
+    background: color-mix(in srgb, var(--build) 12%, var(--bg-elev));
   }
 
   .icon-btn svg {
@@ -318,8 +327,8 @@ body {
   }
 
   .btn:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: none;
+    filter: brightness(1.08);
   }
 
   .btn-primary {
@@ -349,8 +358,35 @@ body {
   }
 
   .input:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: none;
+    background: color-mix(in srgb, var(--build) 8%, var(--bg-elev));
+  }
+
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  @media (max-width: 480px) {
+    .input,
+    select.input,
+    textarea.input {
+      font-size: 16px;
+    }
+  }
+
+  .fitness-set-row .input {
+    @apply !px-2;
+  }
+
+  .fitness-exercise-card {
+    animation: pop-in 0.2s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fitness-exercise-card {
+      animation: none;
+    }
   }
 
   @media (max-width: 480px) {
@@ -381,8 +417,8 @@ body {
   .pill-day:focus-visible,
   .chip:focus-visible,
   .task-row:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: none;
+    filter: brightness(1.12);
   }
 
   .modal-sheet:focus {
@@ -390,8 +426,20 @@ body {
   }
 
   .modal-sheet:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 3px;
+    outline: none;
+  }
+
+  .modal-sheet.modal-scroll-body {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: min(88dvh, 720px);
+  }
+
+  .modal-scroll-inner {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .app-toast {
@@ -668,6 +716,117 @@ body {
     overflow: auto;
   }
 
+  .week-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .week-grid-cell {
+    border-radius: 1rem;
+    padding: 0.55rem 0.25rem;
+    min-height: 4.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+    background: var(--bg-elev);
+    color: var(--text);
+  }
+
+  .week-grid-cell.is-active {
+    transform: scale(1.03);
+  }
+
+  .week-grid-cell.is-work {
+    background: color-mix(in srgb, var(--build) 22%, var(--bg-elev));
+  }
+
+  .week-grid-cell.is-off {
+    background: color-mix(in srgb, var(--mute) 18%, var(--bg-elev));
+  }
+
+  .week-grid-cell.is-template {
+    background: var(--bg-elev);
+  }
+
+  .block-timeline {
+    position: relative;
+    padding-left: 3.25rem;
+  }
+
+  .block-timeline::before {
+    content: "";
+    position: absolute;
+    left: 1.1rem;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 2px;
+    background: var(--rail);
+    border-radius: 999px;
+  }
+
+  .timeline-row {
+    position: relative;
+    margin-bottom: 0.75rem;
+  }
+
+  .timeline-time {
+    position: absolute;
+    left: -3.25rem;
+    top: 0.65rem;
+    width: 2.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--mute);
+    text-align: right;
+  }
+
+  .timeline-dot {
+    position: absolute;
+    left: -2.15rem;
+    top: 0.85rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: var(--build);
+  }
+
+  .sealed-card {
+    text-align: center;
+    padding: 0.5rem 0;
+  }
+
+  .sealed-stamp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--build) 18%, transparent);
+    color: var(--build);
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    animation: stamp-in 0.4s cubic-bezier(0.16, 1, 0.3,  1);
+  }
+
+  .muscle-thumb {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.85rem;
+    background: var(--bg-elev);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .tour-banner {
+    border-radius: 1rem;
+    padding: 0.85rem 1rem;
+    background: color-mix(in srgb, var(--build) 10%, var(--surface));
+  }
+
   .celebrate {
     position: fixed;
     inset: 0;
@@ -719,6 +878,17 @@ body {
   .banner-warn {
     background: color-mix(in srgb, var(--danger) 14%, transparent);
     color: var(--text);
+  }
+}
+
+@keyframes stamp-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
   }
 }
 
