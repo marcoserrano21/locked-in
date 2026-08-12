@@ -1,32 +1,54 @@
 import { DAY_NAMES, dayType, blocksFor, uid } from "../schedule.js";
-import { todayKey, weekDates, formatDisplayDate } from "../dates.js";
+import { todayKey, weekDates, formatDisplayDate, formatTimeForInput, snapTimeInputToDisplay } from "../dates.js";
 import { resolveBlocksForDate } from "../work.js";
-import { escapeHtml, icon, renderMetaRow } from "./dom.js";
-import { normalizeTags, parseTagsFromForm, tagsToFormValue, TAG_TONES, PRIORITY_LEVELS } from "../tags.js";
+import { escapeHtml, icon } from "./dom.js";
+import { normalizeTags, parseTagsFromForm, tagsToFormValue } from "../tags.js";
 import { renderWeekGrid } from "./plan/ShiftSheet.js";
 import { renderBlockTimeline } from "./plan/BlockTimeline.js";
+import { renderDateField } from "./DatePicker.js";
 
-function priorityOptions(selected) {
-  const sel = selected || "";
-  return PRIORITY_LEVELS.map(
-    (p) => `<option value="${p.value}" ${sel === p.value ? "selected" : ""}>${p.label}</option>`
-  ).join("");
+function hourLabel(hh) {
+  const n = Number(hh);
+  const mer = n >= 12 ? "PM" : "AM";
+  const h12 = n % 12 || 12;
+  return `${h12} ${mer}`;
 }
 
-function toneOptions(selected) {
-  return [
-    `<option value="" ${!selected ? "selected" : ""}>None</option>`,
-    ...TAG_TONES.map(
-      (t) => `<option value="${t}" ${selected === t ? "selected" : ""}>${t}</option>`
-    ),
-  ].join("");
+function quarterHourTimeSelects(timeValue) {
+  let hour = "08";
+  let minute = "00";
+  if (timeValue && /^\d{2}:\d{2}$/.test(timeValue)) {
+    hour = timeValue.slice(0, 2);
+    const m = timeValue.slice(3);
+    minute = ["00", "15", "30", "45"].includes(m) ? m : "00";
+  }
+  const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+  return `
+    <div class="flex gap-2">
+      <div class="flex-1">
+        <label class="sr-only" for="block-hour">Hour</label>
+        <select class="input" id="block-hour" name="hour" required>
+          ${hours
+            .map((h) => `<option value="${h}" ${h === hour ? "selected" : ""}>${hourLabel(h)}</option>`)
+            .join("")}
+        </select>
+      </div>
+      <div class="flex-1">
+        <label class="sr-only" for="block-minute">Minutes</label>
+        <select class="input" id="block-minute" name="minute" required>
+          ${["00", "15", "30", "45"]
+            .map((m) => `<option value="${m}" ${m === minute ? "selected" : ""}>:${m}</option>`)
+            .join("")}
+        </select>
+      </div>
+    </div>
+  `;
 }
 
 export function renderPlan(state, ui, opts = {}) {
   const embedded = Boolean(opts.embedded);
   const day = ui.selectedDay;
-  const mode = ui.planMode || "template";
-  const activeChallenge = state.challenge?.status === "active";
+  const mode = ui.planMode || "date";
   const selectedDate = ui.overrideDate || todayKey();
   const weekOffset = ui.shiftWeekOffset || 0;
   const week = weekDates(todayKey(), weekOffset);
@@ -51,21 +73,11 @@ export function renderPlan(state, ui, opts = {}) {
           .join(" · ")
       : "No overrides this week";
 
-  const birthdays = (state.events || []).filter((e) => e.type === "birthday");
-
   const body = `
-      ${
-        embedded
-          ? `<p class="text-sm" style="color:var(--mute)">
-              ${activeChallenge ? "Mid-lock edits are allowed, but logged for Day 30." : "Structure is a tool. Do not rewrite it to dodge the hard block."}
-            </p>`
-          : ""
-      }
-
-      <div class="segment">
-        <button type="button" class="segment-btn ${mode === "template" ? "is-active accent" : ""}" data-action="plan-mode" data-mode="template">Week templates</button>
-        <button type="button" class="segment-btn ${mode === "shifts" ? "is-active accent" : ""}" data-action="plan-mode" data-mode="shifts">Shifts</button>
-        <button type="button" class="segment-btn ${mode === "date" ? "is-active accent" : ""}" data-action="plan-mode" data-mode="date">One day</button>
+      <div class="segment" role="tablist" aria-label="Plan mode">
+        <button type="button" class="segment-btn ${mode === "date" ? "is-active accent" : ""}" id="plan-tab-date" data-action="plan-mode" data-mode="date" role="tab" aria-selected="${mode === "date"}" tabindex="${mode === "date" ? "0" : "-1"}">One day</button>
+        <button type="button" class="segment-btn ${mode === "shifts" ? "is-active accent" : ""}" id="plan-tab-shifts" data-action="plan-mode" data-mode="shifts" role="tab" aria-selected="${mode === "shifts"}" tabindex="${mode === "shifts" ? "0" : "-1"}">Shifts</button>
+        <button type="button" class="segment-btn ${mode === "template" ? "is-active accent" : ""}" id="plan-tab-template" data-action="plan-mode" data-mode="template" role="tab" aria-selected="${mode === "template"}" tabindex="${mode === "template" ? "0" : "-1"}">Week templates</button>
       </div>
 
       ${
@@ -90,29 +102,26 @@ export function renderPlan(state, ui, opts = {}) {
         mode === "date"
           ? `<section class="panel">
               <p class="eyebrow mb-2">Pick a date</p>
-              <input class="input" type="date" value="${selectedDate}" data-action="set-override-date" />
+              ${renderDateField({
+                id: "override-date",
+                name: "overrideDate",
+                value: selectedDate,
+                action: "set-override-date",
+              })}
               <div class="mt-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory">${week
                 .map((key) => {
                   const dow = new Date(`${key}T12:00:00`).getDay();
                   const active = key === selectedDate;
-                  return `<button type="button" class="pill-day ${dayType(dow)} ${active ? "is-active" : ""} snap-start shrink-0" data-action="pick-shift-day" data-date="${key}">${DAY_NAMES[dow]}</button>`;
+                  return `<button type="button" class="pill-day ${dayType(dow)} ${active ? "is-active" : ""} snap-start shrink-0" data-action="pick-override-date" data-date="${key}" data-day="${dow}" aria-pressed="${active}">${DAY_NAMES[dow]}</button>`;
                 })
                 .join("")}</div>
             </section>
             <section class="panel">
               <p class="mb-1 text-sm font-semibold">${formatDisplayDate(selectedDate)}</p>
-              ${renderBlockTimeline(blocks, { mode: "date", day, date: selectedDate })}
+              ${renderBlockTimeline(blocks, { mode: "date", day, date: selectedDate, openBlockMenuIndex: ui.openBlockMenuIndex })}
               <button type="button" class="btn btn-primary mt-4 w-full gap-2" data-action="add-block" data-mode="date" data-day="${day}" data-date="${selectedDate}">
                 ${icon("plus", "h-5 w-5")} Add block
               </button>
-              ${
-                birthdays.length
-                  ? `<div class="mt-4 flex flex-wrap gap-1">${birthdays
-                      .map((e) => `<span class="chip chip-soft">${escapeHtml(e.title)} · ${formatDisplayDate(e.date)}</span>`)
-                      .join("")}</div>`
-                  : ""
-              }
-              <button type="button" class="btn mt-2 w-full !text-xs" data-action="add-event">Add birthday</button>
             </section>`
           : ""
       }
@@ -122,7 +131,7 @@ export function renderPlan(state, ui, opts = {}) {
           ? `<section class="panel">
               <div class="mb-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory">${pillsHtml}</div>
               <p class="mb-3 text-sm font-semibold">${DAY_NAMES[day]} · ${dayType(day) === "foundation" ? "build template" : "work template"}</p>
-              ${renderBlockTimeline(blocks, { mode: "template", day, date: selectedDate, onEmpty: "No blocks. Add one below." })}
+              ${renderBlockTimeline(blocks, { mode: "template", day, date: selectedDate, openBlockMenuIndex: ui.openBlockMenuIndex, onEmpty: "No blocks. Add one below." })}
               <button type="button" class="btn btn-primary mt-4 w-full gap-2" data-action="add-block" data-mode="template" data-day="${day}" data-date="${selectedDate}">
                 ${icon("plus", "h-5 w-5")} Add block
               </button>
@@ -160,9 +169,10 @@ export function renderBlockEditorModal(ui) {
   };
   const isNew = Number(draft.index) < 0;
   const tags = Array.isArray(draft.tags) ? tagsToFormValue(draft.tags) : draft.tags || "";
+  const timeValue = formatTimeForInput(draft.time || "");
 
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add block" : "Edit block"}" data-stop>
         <h2 class="display text-3xl">${isNew ? "Add block" : "Edit block"}</h2>
         <form class="mt-4 space-y-3" data-action="save-block">
@@ -175,8 +185,9 @@ export function renderBlockEditorModal(ui) {
             <input class="input" id="block-label" name="label" required value="${escapeHtml(draft.label || "")}" />
           </div>
           <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-time">Time</label>
-            <input class="input" id="block-time" name="time" type="time" value="${escapeHtml(draft.time || "")}" />
+            <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-hour">Time</label>
+            ${quarterHourTimeSelects(timeValue)}
+            <p class="mt-1 text-xs" style="color:var(--mute)">Quarter hours only — :00, :15, :30, :45</p>
           </div>
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-details">Details</label>
@@ -197,27 +208,9 @@ export function renderBlockEditorModal(ui) {
   `;
 }
 
-export function renderEventEditorModal(ui) {
-  const draft = ui.editingEvent || { id: "", title: "", date: todayKey(), recurYearly: true };
-  return `
-    <div class="modal-backdrop" data-action="close-modal">
-      <div class="modal-sheet" role="dialog" aria-modal="true" data-stop>
-        <h2 class="display text-3xl">${draft.id ? "Edit birthday" : "Add birthday"}</h2>
-        <form class="mt-4 space-y-3" data-action="save-event">
-          <input type="hidden" name="id" value="${escapeHtml(draft.id || "")}" />
-          <input class="input" name="title" required placeholder="Name" value="${escapeHtml(draft.title || "")}" />
-          <input class="input" name="date" type="date" required value="${escapeHtml(draft.date || todayKey())}" />
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="recurYearly" ${draft.recurYearly !== false ? "checked" : ""} /> Repeats yearly</label>
-          <button type="submit" class="btn btn-primary w-full">Save</button>
-        </form>
-      </div>
-    </div>
-  `;
-}
-
 export function renderEditConfirmModal() {
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" data-stop>
         <p class="eyebrow" style="color:var(--maintain)">Mid-lock edit</p>
         <h2 class="display text-3xl mt-1">Log this change?</h2>
@@ -233,10 +226,17 @@ export function renderEditConfirmModal() {
 
 export function createBlockFromForm(form) {
   const tags = parseTagsFromForm(form.tags?.value || "");
+  const hour = form.hour?.value;
+  const minute = form.minute?.value;
+  const rawTime =
+    hour != null && minute != null && hour !== "" && minute !== ""
+      ? `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+      : form.time?.value || "";
+  const time = snapTimeInputToDisplay(rawTime) || rawTime;
   return {
     id: uid("custom"),
     label: form.label.value.trim(),
-    time: form.time.value,
+    time,
     details: form.details.value.trim(),
     soft: Boolean(form.soft?.checked),
     tags: normalizeTags(tags),

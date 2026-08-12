@@ -2,8 +2,10 @@ import { CHALLENGE_META } from "../schedule.js";
 import { ratePerMile, totalEarnings, totalMiles } from "../uber.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
+import { paginate, renderPager } from "./Pagination.js";
+import { renderDateField } from "./DatePicker.js";
 
-export function renderMiles(state) {
+export function renderMiles(state, ui = {}) {
   const miles = totalMiles(state);
   const earn = totalEarnings(state);
   const cap = state.settings.uberCap || CHALLENGE_META.uberCap;
@@ -16,10 +18,10 @@ export function renderMiles(state) {
   const overCap = miles > cap;
   const fillClass = overCap ? "danger" : overSoft ? "warn" : "";
 
-  const rows = state.uberLog
-    .slice()
-    .reverse()
-    .slice(0, 20)
+  const all = (state.uberLog || []).slice().reverse();
+  const { items: pageRows, page, totalPages } = paginate(all, ui.milesPage || 0);
+
+  const rows = pageRows
     .map(
       (e) => `
       <div class="task-row !grid-cols-[1fr_auto]">
@@ -35,20 +37,26 @@ export function renderMiles(state) {
     )
     .join("");
 
+  const isMarco = state.preset === "marco";
+  const title = isMarco ? "Miles" : "Money";
+  const subtitle = isMarco
+    ? `Model 3 RWD · FSD Supervised. Bridge income, not identity. ${CHALLENGE_META.uberNightsPerWeek} nights / week · ${CHALLENGE_META.uberWindow}`
+    : `${escapeHtml(state.settings?.moneyLabel || "Side income")}. Soft stop then hard ceiling. Numbers, not vibes.`;
+  const unitLabel = isMarco || state.settings?.moneyMode !== "hours" ? "miles used" : "units used";
+
   return `
     <section class="screen">
       <header class="page-header">
-        <p class="eyebrow">Miles</p>
+        <p class="eyebrow">${escapeHtml(title)}</p>
         <h1 class="display">Money truth</h1>
         <p class="mt-2 text-sm" style="color:var(--mute)">
-          Model 3 RWD · FSD Supervised. Bridge income, not identity.
-          ${CHALLENGE_META.uberNightsPerWeek} nights / week · ${escapeHtml(CHALLENGE_META.uberWindow)}
+          ${escapeHtml(subtitle)}
         </p>
       </header>
 
       <section class="panel grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs" style="color:var(--mute)">miles used</p>
+          <p class="text-xs" style="color:var(--mute)">${escapeHtml(unitLabel)}</p>
           <p class="display text-4xl" style="color:${overCap ? "var(--danger)" : overSoft ? "var(--maintain)" : "var(--text)"}">${miles}</p>
           <p class="text-xs" style="color:var(--mute)">of ${cap} cap</p>
         </div>
@@ -76,6 +84,7 @@ export function renderMiles(state) {
           </button>
         </div>
         ${rows || `<p class="py-5 text-sm" style="color:var(--mute)">No sessions logged yet.</p>`}
+        ${renderPager(page, totalPages, "miles")}
       </section>
     </section>
   `;
@@ -90,15 +99,18 @@ export function renderUberEditorModal(ui) {
   };
   const isNew = !draft.id;
   return `
-    <div class="modal-backdrop" data-action="close-modal">
+    <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add session" : "Edit session"}" data-stop>
         <h2 class="display text-3xl">${isNew ? "Add session" : "Edit session"}</h2>
         <form class="mt-4 space-y-3" data-action="save-uber">
           <input type="hidden" name="id" value="${escapeHtml(draft.id || "")}" />
-          <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-date">Date</label>
-            <input class="input" id="uber-date" name="date" type="date" required value="${escapeHtml(draft.date || todayKey())}" />
-          </div>
+          ${renderDateField({
+            id: "uber-date",
+            name: "date",
+            value: draft.date || todayKey(),
+            required: true,
+            label: "Date",
+          })}
           <div class="flex gap-2">
             <div class="flex-1">
               <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-miles">Miles</label>

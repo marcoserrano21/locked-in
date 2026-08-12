@@ -21,7 +21,7 @@ export function renderCelebrate(payload, state) {
     <div class="celebrate" role="dialog" aria-modal="true" aria-label="Day sealed">
       <div class="burst" aria-hidden="true">${bits}</div>
       <div class="celebrate-card">
-        <div class="sealed-stamp mx-auto mb-4">SEALED</div>
+        <div class="sealed-stamp mx-auto mb-3">SEALED</div>
         <p class="eyebrow" style="color:var(--build)">Day sealed</p>
         <h2 class="display text-5xl mt-2">Core complete.</h2>
         <p class="mt-3 text-sm" style="color:var(--mute)">
@@ -29,8 +29,8 @@ export function renderCelebrate(payload, state) {
           Streak ${streak} · ${when}
         </p>
         <p class="serif-accent mt-3 text-xl" style="color:var(--text-soft)">${name}, proof over vibes.</p>
-        <div class="mt-6 flex flex-col gap-2">
-          <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="day">${icon("proof", "h-5 w-5")} Share proof</button>
+        <div class="sealed-actions">
+          <button type="button" class="btn btn-primary w-full gap-2" data-action="share-progress" data-scope="sealed">${icon("proof", "h-5 w-5")} Share proof</button>
           <button type="button" class="btn w-full" data-action="dismiss-celebrate">Keep moving</button>
         </div>
       </div>

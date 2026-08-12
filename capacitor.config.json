@@ -1,0 +1,14 @@
+{
+  "appId": "app.lockedin.marco",
+  "appName": "Marco Locked-In",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#3ECF8E"
+    }
+  }
+}

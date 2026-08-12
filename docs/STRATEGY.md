@@ -31,24 +31,33 @@ Backup nudge, import validation, Today Track|Edit, Profile, Hustle tabs, interac
 4. Challenge length 7 / 14 / 30 / 90 per profile  
 5. Editable Day 30 questions per profile  
 
-## Meta / pills / Update Today (shipping)
+## Phase A — PWA polish (shipping)
 
-1. Task meta: time column + aligned pills, large gap, max 2 chips  
-2. Tag tones: neutral / build / maintain / danger  
-3. Full-width row dividers  
-4. Week templates **Update Today** → write today’s date schedule + jump to Track  
+1. Today stats rail (Day X/N · Streak · Core)  
+2. Check-seal CSS motion + reduced-motion  
+3. Partial DOM patches on block toggle  
+4. Backup nudge on Today after Day 3  
+5. Identity commit copy (Marco vs blank / focus)  
+6. Reminders v1.5: streak-at-risk 9 PM, Monday Flow noon, SW `#today`  
 
-## Coach Brain (shipping)
+## Phase B — Product readiness (shipping)
 
-Rule-based on-device hints (streak risk, Monday Flow, soft-stop, Day 21+, empty day). No cloud ML.
+1. Blank setup wizard (week shape, modules, starter blocks, hustle pack)  
+2. Money tab label for non-Marco presets  
+3. Hustle packs library (freelance / job hunt / content / blank)  
+4. Fitness rest timer + History sparkline  
 
-## Next (not this ship)
+## Phase C — Glanceability (shipping)
 
-- Blank setup wizard polish (week shape UI)  
-- Generic Money module rename + module toggles  
-- Hustle packs library (job hunt / content / blank)  
-- Capacitor / App Store wrap + local reminders  
-- Partial DOM updates for block toggles  
+1. List | Timeline toggle on Today  
+2. Share card sealed stamp + Sunday streak share toast  
+3. Coach Brain: empty wizard, late workout, Day 25+ Day 30  
+
+## Next
+
+- Capacitor wrap + local notifications + widget (see CAPACITOR.md)  
+- Light accountability (one trusted person)  
+- Money hours/$ modes  
 
 ## Threat model
 

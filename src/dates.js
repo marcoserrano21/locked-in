@@ -102,6 +102,21 @@ function minutesToInput(mins) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** Snap minutes to nearest 15-minute increment (00, 15, 30, 45). */
+export function snapToQuarterHour(mins) {
+  if (mins == null || !Number.isFinite(mins)) return null;
+  const dayMins = 24 * 60;
+  const wrapped = ((Math.round(Number(mins) / 15) * 15) % dayMins + dayMins) % dayMins;
+  return wrapped;
+}
+
+/** Snap HTML time input value (HH:mm) to quarter hour; returns HH:mm. */
+export function snapTimeInputValue(hhmm) {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(String(hhmm))) return hhmm || "";
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return minutesToInput(snapToQuarterHour(h * 60 + m));
+}
+
 function inputToDisplay(hhmm) {
   if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return "";
   let h = Number(hhmm.slice(0, 2));
@@ -128,6 +143,19 @@ export function formatTimeRange(startInput, endInput, freeText = "") {
   if (start) return start;
   if (end) return end;
   return "";
+}
+
+/** Snap time input and format for block storage (e.g. "8:00 AM"). */
+export function snapTimeInputToDisplay(hhmm) {
+  const snapped = snapTimeInputValue(hhmm);
+  if (!snapped) return "";
+  return inputToDisplay(snapped);
+}
+
+export function formatTimeForInput(timeStr) {
+  const mins = parseTimeToMinutes(timeStr);
+  if (mins == null) return "";
+  return minutesToInput(snapToQuarterHour(mins));
 }
 
 export function nowMinutes() {

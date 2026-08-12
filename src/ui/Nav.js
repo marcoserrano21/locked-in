@@ -2,9 +2,9 @@ import { icon } from "./dom.js";
 
 const TABS = [
   { id: "today", label: "Today", icon: "today" },
-  { id: "proof", label: "Proof", icon: "proof" },
-  { id: "miles", label: "Miles", icon: "miles" },
   { id: "freelance", label: "Hustle", icon: "freelance" },
+  { id: "miles", label: "Miles", icon: "miles" },
+  { id: "proof", label: "Proof", icon: "proof" },
   { id: "profile", label: "Profile", icon: "profile" },
 ];
 
@@ -12,12 +12,14 @@ export function visibleTabs(state) {
   const s = state?.settings || {};
   const full = s.appMode === "full";
   const unlocked = s.modulesUnlocked || {};
+  const isMarco = state?.preset === "marco";
+  const moneyLabel = isMarco ? "Miles" : "Money";
   return TABS.filter((t) => {
     if (full) return true;
-    if (t.id === "proof") return unlocked.proof;
-    if (t.id === "miles") return unlocked.miles;
+    if (t.id === "proof") return Boolean(unlocked.proof);
+    if (t.id === "miles") return Boolean(unlocked.miles);
     return t.id === "today" || t.id === "freelance" || t.id === "profile";
-  });
+  }).map((t) => (t.id === "miles" ? { ...t, label: moneyLabel } : t));
 }
 
 export function renderNav(activeTab, state) {

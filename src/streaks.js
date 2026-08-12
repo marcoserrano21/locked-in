@@ -27,7 +27,7 @@ export function dayCompletion(state, dayOffset) {
   return {
     date: key,
     dow: d.getDay(),
-    type: dayType(d.getDay()),
+    type: dayType(d.getDay(), state),
     pct: core.length ? doneCore / core.length : 0,
     doneCore,
     coreCount: core.length,
