@@ -21,7 +21,7 @@ export const HUSTLE_PACKS = {
     ],
     scripts: {
       warmDm:
-        "Hey {name} — I help local businesses get clearer websites that book more work. Taking 1-2 projects this month. Open to a quick look?",
+        "Hey {name}, I help local businesses get clearer websites that book more work. Taking 1-2 projects this month. Open to a quick look?",
       contraHeadline: "Landing pages for local service businesses that convert",
       socialPost: "Taking 1-2 web projects this month for Orlando locals. Proof over vibes.",
       discoveryOpener: "What does a booked week look like for you right now?",
@@ -47,7 +47,7 @@ export const HUSTLE_PACKS = {
     ],
     scripts: {
       warmDm:
-        "Hey {name} — exploring roles in {field}. Would you be open to a 10-min chat about how you got in?",
+        "Hey {name}, exploring roles in {field}. Would you be open to a 10-min chat about how you got in?",
       contraHeadline: "",
       socialPost: "Open to roles where I can ship product and marketing proof. DMs open.",
       discoveryOpener: "What does a strong first 90 days look like on your team?",
@@ -72,7 +72,7 @@ export const HUSTLE_PACKS = {
       { id: "ct-r4", label: "Week 4", items: ["Offer / CTA test"] },
     ],
     scripts: {
-      warmDm: "Loved your take on {topic}. Building in public on the same lane — open to a collab?",
+      warmDm: "Loved your take on {topic}. Building in public on the same lane. Open to a collab?",
       contraHeadline: "",
       socialPost: "Building in public. Proof over vibes. Day {n}.",
       discoveryOpener: "What content actually moved the needle for you last month?",

@@ -431,7 +431,7 @@ body {
     background: color-mix(in srgb, var(--build) 8%, var(--bg-elev));
   }
 
-  /* —— Date field / calendar (custom, not native type=date) —— */
+  /* --- Date field / calendar (custom, not native type=date) --- */
   .date-field {
     position: relative;
   }
@@ -445,21 +445,18 @@ body {
     min-height: var(--tap, 44px);
     padding: 0.55rem 0.85rem;
     border-radius: 0.85rem;
-    background:
-      linear-gradient(145deg, color-mix(in srgb, var(--build) 7%, var(--bg-elev)), var(--bg-elev));
+    background: var(--bg-elev);
     color: var(--text);
     border: 1px solid color-mix(in srgb, var(--mute) 18%, transparent);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
     text-align: left;
     cursor: pointer;
-    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    transition: border-color 0.18s ease, background 0.18s ease;
   }
 
   .date-field.is-open .date-field-trigger,
   .date-field-trigger:hover {
     border-color: color-mix(in srgb, var(--build) 42%, var(--rail));
-    background: color-mix(in srgb, var(--build) 10%, var(--bg-elev));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--build) 18%, transparent);
+    background: color-mix(in srgb, var(--build) 8%, var(--bg-elev));
   }
 
   .date-field-trigger:focus-visible {
@@ -632,8 +629,12 @@ body {
   }
 
   .fitness-exercise-card {
+    cursor: default;
+    user-select: none;
+  }
+
+  .fitness-exercise-card.is-enter {
     animation: pop-in 0.2s ease-out;
-    cursor: pointer;
   }
 
   .fitness-today-stack {
@@ -1423,13 +1424,14 @@ body {
   }
 
   .check {
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    flex-shrink: 0;
     background: var(--bg-elev);
     color: var(--text);
     transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
@@ -1717,6 +1719,66 @@ body {
     line-height: 1;
   }
 
+  .session-timer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--data) 12%, var(--surface));
+  }
+
+  .session-timer-count {
+    font-family: "Barlow Condensed", Barlow, sans-serif;
+    font-weight: 700;
+    font-size: 1.75rem;
+    color: var(--text);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .check svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .profile-track-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  .profile-track-chip.is-active {
+    border-color: color-mix(in srgb, var(--build) 55%, var(--border));
+    background: color-mix(in srgb, var(--build) 16%, var(--surface));
+    color: var(--build);
+  }
+
+  .beta-link-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+  }
+
+  .beta-link-row code {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: var(--text-soft);
+  }
+
   .sparkline {
     display: block;
     width: 100%;
@@ -2001,6 +2063,8 @@ body {
   }
 
   .fitness-drag-handle {
+    min-width: 44px;
+    min-height: 44px;
     cursor: grab;
     touch-action: none;
   }
@@ -2016,7 +2080,6 @@ body {
   .fitness-exercise-card.is-drop-target {
     outline: 2px solid var(--build);
     outline-offset: 2px;
-    box-shadow: inset 0 3px 0 0 var(--build);
   }
 
   .fitness-session-menu {
@@ -2278,7 +2341,7 @@ body {
     animation: pop-in 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* —— Workout completion (full-screen fitness seal) —— */
+  /* --- Workout completion (full-screen fitness seal) --- */
   .workout-completion {
     --wc-accent: var(--accent-core);
     background: #0b0e14;

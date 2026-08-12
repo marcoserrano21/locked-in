@@ -19,11 +19,15 @@ import { getHustlePack } from "./hustle-packs.js";
 import { BLOCK_PRESETS } from "./setup-presets.js";
 import { startChallenge, resolveChallengeLength } from "./challenge.js";
 import { resolveBlocksForDate } from "./work.js";
+import { storeKeyForGuest, activeGuestId } from "./beta.js";
 
-const STORE_KEY = "marco-tracker-v4";
+const STORE_KEY = storeKeyForGuest();
 const LEGACY_V3 = "marco-tracker-v3";
 const LEGACY_V2 = "marco-tracker-v2";
 const LEGACY_V1 = "marco-tracker-v1";
+
+/** Exported so UI can show which guest slot is active. */
+export { activeGuestId };
 
 const listeners = new Set();
 
@@ -77,6 +81,8 @@ export let ui = {
   fitnessAddSession: null,
   fitnessEquipmentOpen: false,
   fitnessOpenExerciseId: null,
+  fitnessOpenMode: "one",
+  profileLimitsOpen: false,
   fitnessPrefsStep: 1,
   fitnessPrefsMode: "build",
   viewingWorkoutId: null,
@@ -470,34 +476,37 @@ export function loadState() {
       }
     }
 
-    const rawV3 = localStorage.getItem(LEGACY_V3) || localStorage.getItem(LEGACY_V2);
-    if (rawV3) {
-      bootFromV3(JSON.parse(rawV3));
-      persist();
-      return state;
-    }
+    // Legacy keys only apply to the default (non-guest) store.
+    if (!activeGuestId) {
+      const rawV3 = localStorage.getItem(LEGACY_V3) || localStorage.getItem(LEGACY_V2);
+      if (rawV3) {
+        bootFromV3(JSON.parse(rawV3));
+        persist();
+        return state;
+      }
 
-    const legacy = localStorage.getItem(LEGACY_V1);
-    if (legacy) {
-      const parsed = JSON.parse(legacy);
-      bootFromV3({
-        completions: parsed.completions,
-        uberLog: (parsed.uberLog || []).map((e) => ({
-          id: e.id || uid("uber"),
-          date: e.date,
-          miles: Number(e.miles) || 0,
-          earnings: Number(e.earnings) || 0,
-        })),
-      });
-      persist();
-      return state;
+      const legacy = localStorage.getItem(LEGACY_V1);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        bootFromV3({
+          completions: parsed.completions,
+          uberLog: (parsed.uberLog || []).map((e) => ({
+            id: e.id || uid("uber"),
+            date: e.date,
+            miles: Number(e.miles) || 0,
+            earnings: Number(e.earnings) || 0,
+          })),
+        });
+        persist();
+        return state;
+      }
     }
   } catch (error) {
     console.warn("load failed", error);
   }
 
   const isDemo = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "marco";
-  if (isDemo) {
+  if (isDemo && !activeGuestId) {
     const profile = makeProfile("marco", "Marco", defaultProfileData());
     appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
     syncActiveFromRoot();
@@ -506,8 +515,9 @@ export function loadState() {
   }
 
   needsWelcome = true;
-  const profile = makeProfile("blank", "", blankProfileData(""));
-  profile.settings.displayName = "";
+  const blankName = activeGuestId ? `Beta ${activeGuestId.replace("beta-", "")}` : "";
+  const profile = makeProfile("blank", blankName, blankProfileData(blankName));
+  profile.settings.displayName = blankName;
   appRoot = { version: 4, activeProfileId: profile.id, profiles: { [profile.id]: profile } };
   syncActiveFromRoot();
   persist();
@@ -1159,6 +1169,26 @@ export function startWorkout(date = todayKey()) {
       fitnessLog: [makeWorkoutSession(date), ...log],
     };
   });
+}
+
+export function toggleSessionTimer(sessionId) {
+  if (!sessionId) return;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      if (session.completedAt) return session;
+      if (session.timerStartedAt) {
+        const started = Date.parse(session.timerStartedAt);
+        const add = Number.isFinite(started) ? Math.max(0, Date.now() - started) : 0;
+        return {
+          ...session,
+          timerStartedAt: null,
+          timerElapsedMs: Math.max(0, Number(session.timerElapsedMs) || 0) + add,
+        };
+      }
+      return { ...session, timerStartedAt: new Date().toISOString() };
+    }),
+  }));
 }
 
 export function addExerciseToSession(sessionId, name, muscleGroup = "", planMeta = {}) {

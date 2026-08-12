@@ -154,7 +154,7 @@ function renderStatusBanner(state, ui, ctx) {
   if (completion.complete && isToday) {
     return `
       <div class="status-banner status-banner-sealed" data-region="now-card" role="status">
-        <p class="status-banner-text min-w-0 flex-1">${icon("check", "h-4 w-4")} Day sealed — all core blocks done${softRemaining ? ` · ${softRemaining} soft left` : ""}</p>
+        <p class="status-banner-text min-w-0 flex-1">${icon("check", "h-4 w-4")} Day sealed. All core blocks done${softRemaining ? ` · ${softRemaining} soft left` : ""}</p>
         <button type="button" class="btn btn-primary status-banner-action !min-h-9 !px-3 !text-xs shrink-0" data-action="share-progress" data-scope="day">Share</button>
       </div>`;
   }
@@ -171,7 +171,7 @@ function renderStatusBanner(state, ui, ctx) {
 
   const riskClass = atRisk ? "status-banner-risk" : "";
   const headline = atRisk
-    ? `Streak at risk — ${left} core block${left === 1 ? "" : "s"} left today`
+    ? `Streak at risk. ${left} core block${left === 1 ? "" : "s"} left today`
     : left > 0
       ? `${left} core block${left === 1 ? "" : "s"} left`
       : "Core complete";
@@ -293,7 +293,6 @@ function renderDayPanel(state, ui, ctx) {
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <span class="chip chip-build" data-region="core-chip">${completion.doneCore}/${completion.coreCount} core</span>
-          <button type="button" class="icon-btn" data-action="refresh-today" aria-label="Refresh schedule">${icon("refresh", "h-4 w-4")}</button>
         </div>
       </div>
       <div class="mb-3">

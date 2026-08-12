@@ -18,7 +18,7 @@ export function buildDayShareText(state, date = todayKey()) {
     workoutLine = `\nWorkout: ${count} exercises · ${vol} ${unit} volume.`;
   }
   const sealed = c.complete ? "sealed" : "in progress";
-  return `Day ${dayNum}/${length} ${sealed}. ${c.doneCore}/${c.coreCount} core blocks.${workoutLine}\nStreak: ${streak}. Proof over vibes.\n— ${name}, via Locked-In`;
+  return `Day ${dayNum}/${length} ${sealed}. ${c.doneCore}/${c.coreCount} core blocks.${workoutLine}\nStreak: ${streak}. Proof over vibes.\nvia Locked-In · ${name}`;
 }
 
 export function buildWeekShareText(state, weekOffset = 0) {
@@ -31,7 +31,7 @@ export function buildWeekShareText(state, weekOffset = 0) {
   });
   const workouts = completedSessions(state.fitnessLog || []).filter((s) => keys.includes(s.date)).length;
   const label = weekOffset < 0 ? "Last week" : "This week";
-  return `${label}: ${sealed}/7 days sealed · ${workouts} workouts logged.\nStreak: ${streak}.\nProof over vibes.\n— ${name}, via Locked-In`;
+  return `${label}: ${sealed}/7 days sealed · ${workouts} workouts logged.\nStreak: ${streak}.\nProof over vibes.\nvia Locked-In · ${name}`;
 }
 
 export function buildMonthShareText(state) {
@@ -53,7 +53,7 @@ export function buildMonthShareText(state) {
     const diff = (Date.now() - d.getTime()) / 86400000;
     return diff <= 30;
   }).length;
-  return `Last 30 days: ${sealed} core days sealed · ${workouts} workouts.\nStreak: ${streak}.\nProof over vibes.\n— ${name}, via Locked-In`;
+  return `Last 30 days: ${sealed} core days sealed · ${workouts} workouts.\nStreak: ${streak}.\nProof over vibes.\nvia Locked-In · ${name}`;
 }
 
 export function buildFitnessShareText(state, date = todayKey(), extras = null) {
@@ -64,7 +64,7 @@ export function buildFitnessShareText(state, date = todayKey(), extras = null) {
     (state.fitnessLog || []).find((s) => s.date === date && s.completedAt) ||
     completedSessions(state.fitnessLog || [])[0];
   if (!session) {
-    return `Training logged.\nProof over vibes.\n— ${name}, via Locked-In`;
+    return `Training logged.\nProof over vibes.\nvia Locked-In · ${name}`;
   }
   const vol = formatVolume(sessionVolume(session, unit));
   const count = (session.exercises || []).length;
@@ -73,12 +73,12 @@ export function buildFitnessShareText(state, date = todayKey(), extras = null) {
       extras.previousValue && extras.newValue
         ? `New PR: ${extras.exerciseName} · ${extras.previousValue} → ${extras.newValue}.`
         : `New PR: ${extras.exerciseName}.`;
-    return `${prLine}\n${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\n— ${name}, via Locked-In`;
+    return `${prLine}\n${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\nvia Locked-In · ${name}`;
   }
   if (extras?.tier === "streak-milestone" && extras.streakCount) {
-    return `${extras.streakCount}-day streak. Let's go.\n${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\n— ${name}, via Locked-In`;
+    return `${extras.streakCount}-day streak. Let's go.\n${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\nvia Locked-In · ${name}`;
   }
-  return `Workout sealed · ${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\n— ${name}, via Locked-In`;
+  return `Workout sealed · ${count} exercises · ${vol} ${unit}.\n${formatDisplayDate(session.date)}\nProof over vibes.\nvia Locked-In · ${name}`;
 }
 
 function cardCopy(state, scope, date) {
@@ -219,7 +219,7 @@ export async function renderShareCardBlob(state, scope = "day", date = todayKey(
 
   ctx.fillStyle = "#F2F4F8";
   ctx.font = "600 32px Barlow, system-ui, sans-serif";
-  ctx.fillText(`— ${copy.name}`, 72, 1240);
+  ctx.fillText(`via Locked-In · ${copy.name}`, 72, 1240);
 
   ctx.fillStyle = "#3ECF8E";
   ctx.font = "600 24px Barlow, system-ui, sans-serif";

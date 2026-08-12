@@ -29,7 +29,7 @@ export const copy = {
   fitness: {
     setupEyebrow: "Workout setup",
     setupTitle: "Build your training setup",
-    setupSubtitle: "Level, gear, outcome, and why — then we pick muscles.",
+    setupSubtitle: "Level, gear, outcome, and why. Then we pick muscles.",
     prefsEyebrow: (step) => `Training prefs · ${step}/2`,
     outcomeTitle: "What's the outcome?",
     outcomeSubtitle: "Pick one. Shapes volume and intensity.",
@@ -47,7 +47,7 @@ export const copy = {
   },
   challenge: {
     locked90: "90-day lock-in is Premium",
-    customLabel: "Custom days (7–365)",
+    customLabel: "Custom days (7-365)",
     customSave: "Set length",
   },
   coach: {

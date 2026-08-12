@@ -187,7 +187,7 @@ export function renderBlockEditorModal(ui) {
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-hour">Time</label>
             ${quarterHourTimeSelects(timeValue)}
-            <p class="mt-1 text-xs" style="color:var(--mute)">Quarter hours only — :00, :15, :30, :45</p>
+            <p class="mt-1 text-xs" style="color:var(--mute)">Quarter hours only: :00, :15, :30, :45</p>
           </div>
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="block-details">Details</label>

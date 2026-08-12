@@ -2,6 +2,11 @@ import { challengeDayNumber } from "../challenge.js";
 import { formatDisplayDate } from "../dates.js";
 import { BACKUP_STALE_DAYS, daysSinceBackup, isBackupStale } from "../backup.js";
 import { MAX_PROFILES } from "../store.js";
+import {
+  activeGuestId,
+  computeBetaInsights,
+  listBetaGuestLinks,
+} from "../beta.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderFlash } from "./Install.js";
 import { renderDay30Editor } from "./Day30Editor.js";
@@ -33,83 +38,102 @@ export function renderProfile(state, ui = {}, profiles = []) {
   const challengeOpen = ui.profileChallengeOpen !== false;
   const day30Open =
     ui.profileDay30Open != null ? Boolean(ui.profileDay30Open) : dayNum >= 21;
+  const limitsOpen = Boolean(ui.profileLimitsOpen);
+  const displayName = s.displayName || "Marco";
+  const bio = s.bio || "Build the day. Keep the streak.";
+  const betaLinks = listBetaGuestLinks();
+  const insights = computeBetaInsights(state);
 
-  const profileRows = profiles
+  const trackChips = profiles
     .map(
       (p) => `
-      <div class="plan-row !min-h-[4.75rem] ${p.active ? "!bg-[color-mix(in_srgb,var(--build)_14%,transparent)]" : ""}">
-        <div class="flex items-start justify-between gap-2">
-          <button type="button" class="min-w-0 flex-1 text-left" data-action="switch-profile" data-id="${escapeHtml(p.id)}" ${p.active ? "aria-current=\"true\"" : ""}>
-            <p class="task-title !min-h-0">${escapeHtml(p.displayName)}</p>
-            <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(p.preset)}${p.active ? " · active" : ""}</p>
-          </button>
-          <div class="flex shrink-0 items-center gap-1">
-            <button type="button" class="icon-btn" data-action="edit-profile" data-id="${escapeHtml(p.id)}" aria-label="Edit profile ${escapeHtml(p.displayName)}">${icon("edit", "h-4 w-4")}</button>
-            <button type="button" class="icon-btn" data-action="delete-profile" data-id="${escapeHtml(p.id)}" aria-label="Remove profile ${escapeHtml(p.displayName)}" ${canDelete ? "" : "disabled"}>${icon("trash", "h-4 w-4")}</button>
-          </div>
+      <button type="button" class="profile-track-chip ${p.active ? "is-active" : ""}" data-action="switch-profile" data-id="${escapeHtml(p.id)}" ${p.active ? 'aria-current="true"' : ""}>
+        ${escapeHtml(p.displayName)}
+      </button>`
+    )
+    .join("");
+
+  const trackActions = profiles
+    .map(
+      (p) => `
+      <div class="flex items-center justify-between gap-2 py-1">
+        <p class="text-sm min-w-0 truncate">${escapeHtml(p.displayName)}${p.active ? ' <span style="color:var(--mute)">· active</span>' : ""}</p>
+        <div class="flex shrink-0 gap-1">
+          <button type="button" class="icon-btn" data-action="edit-profile" data-id="${escapeHtml(p.id)}" aria-label="Edit ${escapeHtml(p.displayName)}">${icon("edit", "h-4 w-4")}</button>
+          <button type="button" class="icon-btn" data-action="delete-profile" data-id="${escapeHtml(p.id)}" aria-label="Remove ${escapeHtml(p.displayName)}" ${canDelete ? "" : "disabled"}>${icon("trash", "h-4 w-4")}</button>
         </div>
-        ${
-          p.active
-            ? ""
-            : `<button type="button" class="btn mt-2 w-full !min-h-11 !text-xs" data-action="switch-profile" data-id="${escapeHtml(p.id)}">Switch to this profile</button>`
-        }
       </div>`
     )
     .join("");
 
   return `
-    <section class="screen">
+    <section class="screen space-y-3">
       <header class="page-header">
         <button type="button" class="btn mb-3 inline-flex items-center gap-1 !min-h-11 !px-3" data-action="set-tab" data-tab="today" aria-label="Back to Today">
           ${icon("left", "h-4 w-4")}
           Back to Today
         </button>
-        <p class="eyebrow">Profile</p>
-        <h1 class="display">${escapeHtml(s.displayName || "Marco")}</h1>
-        <p class="mt-2 text-sm" style="color:var(--mute)">Identity, profiles, preferences, and the nuclear options.</p>
+        <p class="eyebrow">You</p>
+        <h1 class="display">${escapeHtml(displayName)}</h1>
+        <p class="mt-2 text-sm" style="color:var(--mute)">${escapeHtml(bio)}</p>
       </header>
 
       ${renderFlash(ui.flash)}
 
-      <section class="panel space-y-2">
-        <p class="eyebrow">On-device profiles</p>
-        <div class="space-y-2">${profileRows || `<p class="text-sm" style="color:var(--mute)">One profile loaded.</p>`}</div>
-        <div class="flex flex-wrap gap-2 pt-1">
-          ${
-            atProfileCap
-              ? `<p class="text-xs w-full" style="color:var(--mute)">${profiles.length}/${MAX_PROFILES} profiles — remove one to add another.</p>`
-              : `<button type="button" class="btn btn-primary flex-1" data-action="create-profile" data-kind="blank">Add blank</button>
-          <button type="button" class="btn flex-1" data-action="create-profile" data-kind="marco">Add Marco preset</button>`
-          }
-        </div>
-        <p class="text-xs" style="color:var(--mute)">Your data stays on this device. Share the link; each person gets their own track. Export JSON to backup or move devices.</p>
-      </section>
-
-      <section class="panel">
-        <p class="eyebrow mb-3">Identity</p>
+      <section class="panel space-y-3">
+        <p class="eyebrow mb-0">Identity</p>
         <form class="space-y-2" data-action="profile-identity">
           <div>
             <label class="mb-1 block text-xs" style="color:var(--mute)" for="display-name">Display name</label>
             <input class="input" id="display-name" name="displayName" value="${escapeHtml(s.displayName || "")}" required autocomplete="nickname" />
           </div>
           <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="bio">Positioning</label>
-            <textarea class="input min-h-[72px] py-3" id="bio" name="bio" placeholder="One line on what you do">${escapeHtml(s.bio || "")}</textarea>
+            <label class="mb-1 block text-xs" style="color:var(--mute)" for="bio">One-line positioning</label>
+            <textarea class="input min-h-[72px] py-3" id="bio" name="bio" placeholder="What you're building">${escapeHtml(s.bio || "")}</textarea>
           </div>
-          <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="portfolio">Portfolio URL</label>
-            <input class="input" id="portfolio" name="portfolioUrl" type="url" value="${escapeHtml(s.portfolioUrl || "")}" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs" style="color:var(--mute)" for="linkedin">LinkedIn URL</label>
-            <input class="input" id="linkedin" name="linkedinUrl" type="url" value="${escapeHtml(s.linkedinUrl || "")}" />
-          </div>
+          <details class="text-sm">
+            <summary class="cursor-pointer text-xs font-semibold" style="color:var(--mute)">Links</summary>
+            <div class="mt-2 space-y-2">
+              <div>
+                <label class="mb-1 block text-xs" style="color:var(--mute)" for="portfolio">Portfolio URL</label>
+                <input class="input" id="portfolio" name="portfolioUrl" type="url" value="${escapeHtml(s.portfolioUrl || "")}" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs" style="color:var(--mute)" for="linkedin">LinkedIn URL</label>
+                <input class="input" id="linkedin" name="linkedinUrl" type="url" value="${escapeHtml(s.linkedinUrl || "")}" />
+              </div>
+            </div>
+          </details>
           <button class="btn btn-primary w-full" type="submit">Save identity</button>
         </form>
       </section>
 
       <section class="panel space-y-3">
-        <p class="eyebrow">Preferences</p>
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="eyebrow mb-0">Tracks</p>
+            <p class="mt-1 text-xs" style="color:var(--mute)">On-device profiles. Same phone, separate lanes.</p>
+          </div>
+          ${
+            atProfileCap
+              ? `<p class="text-xs shrink-0" style="color:var(--mute)">${profiles.length}/${MAX_PROFILES}</p>`
+              : `<button type="button" class="btn !min-h-9 !px-3 !text-xs shrink-0" data-action="create-profile" data-kind="blank">Add</button>`
+          }
+        </div>
+        <div class="flex flex-wrap gap-2">${trackChips || `<p class="text-sm" style="color:var(--mute)">One track loaded.</p>`}</div>
+        <details class="text-sm">
+          <summary class="cursor-pointer text-xs font-semibold" style="color:var(--mute)">Edit or remove</summary>
+          <div class="mt-2 space-y-1">${trackActions}</div>
+          ${
+            atProfileCap
+              ? ""
+              : `<button type="button" class="btn mt-2 w-full !min-h-10 !text-xs" data-action="create-profile" data-kind="marco">Add Marco preset</button>`
+          }
+        </details>
+      </section>
+
+      <section class="panel space-y-3">
+        <p class="eyebrow mb-0">Preferences</p>
         <div>
           <p class="mb-2 text-xs" style="color:var(--mute)" id="theme-label">Theme</p>
           <div class="segment" role="group" aria-labelledby="theme-label">
@@ -119,13 +143,6 @@ export function renderProfile(state, ui = {}, profiles = []) {
             ).join("")}
           </div>
         </div>
-        <label class="flex min-h-tap flex-col gap-2 text-sm">
-          <span class="flex items-center justify-between gap-3">
-            <span id="catchup-label">Yesterday catch-up</span>
-            <input type="checkbox" data-action="toggle-catchup" ${s.yesterdayCatchUp !== false ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="catchup-label" aria-describedby="catchup-help" />
-          </span>
-          <span id="catchup-help" class="text-xs" style="color:var(--mute)">Lets you check off yesterday's core blocks until midnight tonight. Good for late finishes. Does not change streak rules; today is still the main track.</span>
-        </label>
         <div>
           <p class="mb-2 text-xs" style="color:var(--mute)">App mode</p>
           <div class="segment" role="group" aria-label="App mode">
@@ -136,39 +153,54 @@ export function renderProfile(state, ui = {}, profiles = []) {
         </div>
         <label class="flex min-h-tap flex-col gap-2 text-sm">
           <span class="flex items-center justify-between gap-3">
+            <span id="catchup-label">Yesterday catch-up</span>
+            <input type="checkbox" data-action="toggle-catchup" ${s.yesterdayCatchUp !== false ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="catchup-label" aria-describedby="catchup-help" />
+          </span>
+          <span id="catchup-help" class="text-xs" style="color:var(--mute)">Check yesterday's core blocks until midnight. Today stays the main track.</span>
+        </label>
+        <label class="flex min-h-tap flex-col gap-2 text-sm">
+          <span class="flex items-center justify-between gap-3">
             <span id="reminders-label">Block reminders</span>
             <input type="checkbox" data-action="toggle-block-reminders" ${s.blockReminders ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="reminders-label" aria-describedby="reminders-help" />
           </span>
-          <span id="reminders-help" class="text-xs" style="color:var(--mute)">Local alerts ~5 min before the next core block, streak-at-risk at 9 PM, and Monday Flow at noon. Works best when the app is installed and recently open. Background delivery is limited on iOS until a native Capacitor wrap.</span>
+          <span id="reminders-help" class="text-xs" style="color:var(--mute)">Local alerts before the next core block. Best when the app is installed and recently open.</span>
         </label>
         <div>
-          <p class="mb-2 text-xs" style="color:var(--mute)">Premium preview</p>
-          <button type="button" class="btn w-full" data-action="${s.premiumUnlocked ? "disable-premium-preview" : "open-premium-unlock"}">
-            ${s.premiumUnlocked ? "Disable Premium preview" : "Enable Premium preview"}
+          <button type="button" class="review-head w-full !px-0" data-action="toggle-profile-limits" aria-expanded="${limitsOpen}">
+            <div class="min-w-0 text-left">
+              <p class="text-xs font-semibold mb-0" style="color:var(--mute)">Limits</p>
+              <p class="mt-1 text-xs" style="color:var(--mute)">${state.preset === "marco" ? "Mile soft stop / hard cap" : "Money soft stop / hard cap"}</p>
+            </div>
+            <span class="chevron-rot ${limitsOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
           </button>
-          <p class="mt-2 text-xs" style="color:var(--mute)">Client-side only for testing. Not real billing security.</p>
-        </div>
-        <form class="space-y-2" data-action="profile-miles">
-          ${
-            state.preset !== "marco"
-              ? `<div>
-              <label class="mb-1 block text-xs" style="color:var(--mute)" for="money-label">Money label</label>
-              <input class="input" id="money-label" name="moneyLabel" value="${escapeHtml(s.moneyLabel || "Side income")}" placeholder="Side income" />
-            </div>`
-              : ""
-          }
-          <div class="flex gap-2">
-            <div class="flex-1">
-              <label class="mb-1 block text-xs" style="color:var(--mute)" for="soft-stop">Soft stop</label>
-              <input class="input" id="soft-stop" name="uberSoftStop" type="number" min="1" value="${Number(s.uberSoftStop || 400)}" />
-            </div>
-            <div class="flex-1">
-              <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-cap">Hard cap</label>
-              <input class="input" id="uber-cap" name="uberCap" type="number" min="1" value="${Number(s.uberCap || 500)}" />
-            </div>
+          <div class="day30-body ${limitsOpen ? "is-open" : ""}">
+            ${
+              limitsOpen
+                ? `<form class="space-y-2 mt-2" data-action="profile-miles">
+              ${
+                state.preset !== "marco"
+                  ? `<div>
+                  <label class="mb-1 block text-xs" style="color:var(--mute)" for="money-label">Money label</label>
+                  <input class="input" id="money-label" name="moneyLabel" value="${escapeHtml(s.moneyLabel || "Side income")}" placeholder="Side income" />
+                </div>`
+                  : ""
+              }
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="mb-1 block text-xs" style="color:var(--mute)" for="soft-stop">Soft stop</label>
+                  <input class="input" id="soft-stop" name="uberSoftStop" type="number" min="1" value="${Number(s.uberSoftStop || 400)}" />
+                </div>
+                <div class="flex-1">
+                  <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-cap">Hard cap</label>
+                  <input class="input" id="uber-cap" name="uberCap" type="number" min="1" value="${Number(s.uberCap || 500)}" />
+                </div>
+              </div>
+              <button class="btn w-full" type="submit">Save limits</button>
+            </form>`
+                : ""
+            }
           </div>
-          <button class="btn w-full" type="submit">Save ${state.preset === "marco" ? "mile" : "money"} limits</button>
-        </form>
+        </div>
       </section>
 
       <section class="panel space-y-3">
@@ -214,6 +246,18 @@ export function renderProfile(state, ui = {}, profiles = []) {
           </form>`
               : ""
           }
+        </div>
+        <div class="mt-4 pt-3" style="border-top:1px solid var(--border)">
+          <button type="button" class="review-head w-full !px-0" data-action="toggle-profile-day30" aria-expanded="${day30Open}">
+            <div class="min-w-0 text-left">
+              <p class="text-xs font-semibold mb-0">Day 30 review</p>
+              <p class="mt-1 text-xs" style="color:var(--mute)">Edit questions. Answer on Proof.</p>
+            </div>
+            <span class="chevron-rot ${day30Open ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
+          </button>
+          <div class="day30-body ${day30Open ? "is-open" : ""}">
+            ${day30Open ? renderDay30Editor(state, { embedded: true }) : ""}
+          </div>
         </div>`
               : ""
           }
@@ -221,26 +265,13 @@ export function renderProfile(state, ui = {}, profiles = []) {
       </section>
 
       <section class="panel space-y-2">
-        <button type="button" class="review-head w-full !px-0" data-action="toggle-profile-day30" aria-expanded="${day30Open}">
-          <div class="min-w-0 text-left">
-            <p class="eyebrow mb-0">Day 30 review</p>
-            <p class="mt-1 text-xs" style="color:var(--mute)">Edit questions · answer on Proof</p>
-          </div>
-          <span class="chevron-rot ${day30Open ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
-        </button>
-        <div class="day30-body ${day30Open ? "is-open" : ""}">
-          ${day30Open ? renderDay30Editor(state, { embedded: true }) : ""}
-        </div>
-      </section>
-
-      <section class="panel space-y-2">
-        <p class="eyebrow">Data</p>
+        <p class="eyebrow mb-0">Data</p>
         ${
           stale
             ? `<div class="banner banner-warn" role="status">
                 No fresh export in ${since == null ? `${BACKUP_STALE_DAYS}+` : since} day${since === 1 ? "" : "s"}. Last backup: ${escapeHtml(lastLabel)}. Export is your account on this phone.
               </div>`
-            : `<p class="text-xs" style="color:var(--mute)">Last export: ${escapeHtml(lastLabel)}. Do not share backup files publicly. Device wipe = data gone unless exported.</p>`
+            : `<p class="text-xs" style="color:var(--mute)">Last export: ${escapeHtml(lastLabel)}. Device wipe = data gone unless exported.</p>`
         }
         <div class="flex flex-wrap gap-2">
           <button type="button" class="btn ${stale ? "btn-primary" : ""}" data-action="export-backup">Export JSON</button>
@@ -249,16 +280,39 @@ export function renderProfile(state, ui = {}, profiles = []) {
         </div>
       </section>
 
-      <section class="panel space-y-2">
-        <p class="eyebrow">Testing</p>
-        <p class="text-sm" style="color:var(--mute)">Wipe local data and restart from Welcome so you can walk Simple vs Complete again.</p>
-        <button type="button" class="btn w-full" data-action="open-restart-onboarding">Restart app / Start from onboarding</button>
+      <section class="panel space-y-3">
+        <p class="eyebrow mb-0">Beta</p>
+        <p class="text-xs" style="color:var(--mute)">
+          Share one guest link per friend. Each slot is its own localStorage. No shared blob, no login wall from the app.
+          ${activeGuestId ? ` You are on <strong>${escapeHtml(activeGuestId)}</strong>.` : " You are on the founder track."}
+        </p>
+        <div class="panel-quiet space-y-1 !p-3">
+          <p class="text-xs font-semibold" style="color:var(--mute)">Local insights (this device)</p>
+          <p class="text-sm">${insights.completedWorkouts} workouts · ${insights.sealedDays} days sealed · ${insights.daysWithChecks} days with checks</p>
+        </div>
+        <div class="space-y-1">
+          ${betaLinks
+            .map(
+              (link) => `
+            <div class="beta-link-row">
+              <code title="${escapeHtml(link.url)}">${escapeHtml(link.id)}</code>
+              <button type="button" class="btn !min-h-9 !px-3 !text-xs shrink-0" data-action="copy-guest-link" data-url="${escapeHtml(link.url)}">Copy</button>
+            </div>`
+            )
+            .join("")}
+        </div>
+        <button type="button" class="btn w-full !text-xs" data-action="copy-all-beta-links">Copy all 10 links</button>
       </section>
 
-      <section class="panel space-y-2">
-        <p class="eyebrow" style="color:var(--danger)">Danger zone</p>
-        <p class="text-sm" style="color:var(--mute)">Wipes local data, reseeds Marco schedule, and forces the recommit gate.</p>
-        ${stale ? `<p class="text-xs" style="color:var(--maintain)">Export first. This reset cannot be undone on-device.</p>` : ""}
+      <section class="panel space-y-3">
+        <p class="eyebrow mb-0" style="color:var(--danger)">Danger</p>
+        <p class="text-xs" style="color:var(--mute)">Testing and wipe tools. Export first if the streak matters.</p>
+        <button type="button" class="btn w-full" data-action="${s.premiumUnlocked ? "disable-premium-preview" : "open-premium-unlock"}">
+          ${s.premiumUnlocked ? "Disable Premium preview" : "Enable Premium preview"}
+        </button>
+        <p class="text-xs" style="color:var(--mute)">Client-side only. Not real billing security.</p>
+        <button type="button" class="btn w-full" data-action="open-restart-onboarding">Restart from onboarding</button>
+        ${stale ? `<p class="text-xs" style="color:var(--maintain)">Export first. Reset cannot be undone on-device.</p>` : ""}
         <button type="button" class="btn btn-danger w-full" data-action="open-reset">Reset app</button>
       </section>
     </section>

@@ -1,4 +1,6 @@
-const THEME_KEY = "marco-theme";
+import { themeKeyForGuest } from "./beta.js";
+
+const THEME_KEY = themeKeyForGuest();
 
 export function getStoredTheme() {
   return localStorage.getItem(THEME_KEY) || "dark";

@@ -8,7 +8,7 @@ export function renderPremiumUnlockCard() {
     <section class="panel premium-card space-y-3">
       <p class="eyebrow" style="color:var(--maintain)">Premium preview</p>
       <h2 class="display text-3xl leading-tight">Unlock Hustle command center</h2>
-      <p class="text-sm" style="color:var(--mute)">Fitness stays free. This gate is client-side for testing — not real payments.</p>
+      <p class="text-sm" style="color:var(--mute)">Fitness stays free. This gate is client-side for testing, not real payments.</p>
       <button type="button" class="btn btn-primary w-full" data-action="open-premium-unlock">Unlock Premium</button>
     </section>
   `;

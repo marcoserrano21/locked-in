@@ -1,4 +1,5 @@
 import "./style.css";
+import { inject } from "@vercel/analytics";
 import {
   loadState,
   subscribe,
@@ -68,6 +69,7 @@ import {
   applySetupWizard,
   patchFitnessSettings,
   toggleTrainWhy,
+  toggleSessionTimer,
 } from "./store.js";
 import { startChallenge, challengeDayNumber, isChallengeUnlocked } from "./challenge.js";
 import { blocksFor, uid } from "./schedule.js";
@@ -98,6 +100,8 @@ import {
   renderAddExerciseModal,
   renderFitnessCelebrate,
   renderWorkoutDetailModal,
+  patchFitnessExpandState,
+  patchSessionTimerClock,
 } from "./ui/Fitness.js";
 import { renderWorkoutBuilderModal } from "./ui/fitness/WorkoutBuilderModal.js";
 import { renderFitnessPrefsModal } from "./ui/fitness/FitnessPrefsModal.js";
@@ -124,12 +128,15 @@ import { renderToast } from "./ui/Install.js";
 import { renderPremiumUnlockModal, PREMIUM_TEST_PASSWORD } from "./ui/PremiumUnlock.js";
 import { renderHustleEditorModal, makeFlowItem, makeRampWeek } from "./ui/HustleEditor.js";
 import { computeStreak } from "./streaks.js";
+import { listBetaGuestLinks } from "./beta.js";
 
 const app = document.getElementById("app");
 let pendingPlanAction = null;
 let toastTimer = null;
 /** When true, next subscribe render tries Today region patch instead of full remount. */
 let preferTodayPatch = false;
+/** When true, next subscribe render patches Fitness expand state instead of full remount. */
+let preferFitnessPatch = false;
 let deferredInstallPrompt = null;
 let canInstallPwa = false;
 let lastTab = null;
@@ -264,6 +271,19 @@ function render() {
     }
   }
   preferTodayPatch = false;
+
+  if (
+    preferFitnessPatch &&
+    !needsCommit &&
+    !ui.celebrate &&
+    !ui.modal &&
+    ui.tab === "freelance" &&
+    (ui.hustleView || "fitness") === "fitness"
+  ) {
+    preferFitnessPatch = false;
+    if (patchFitnessExpandState(app, state, ui)) return;
+  }
+  preferFitnessPatch = false;
 
   const tabChanged = lastTab != null && lastTab !== ui.tab;
   lastTab = ui.tab;
@@ -400,6 +420,7 @@ function sealFitnessSession(sessionId) {
     fitnessTab: "today",
     restTimer: null,
     fitnessOpenExerciseId: null,
+    fitnessOpenMode: "one",
   });
   return true;
 }
@@ -818,10 +839,30 @@ app.addEventListener("click", (event) => {
 
   if (action === "toggle-fitness-exercise") {
     const id = t.dataset.exercise || "";
-    const current = ui.fitnessOpenExerciseId;
-    // null = default first incomplete; "" = all collapsed; id = that exercise open
-    const next = current === id ? "" : id;
-    setUi({ fitnessOpenExerciseId: next });
+    const expanded = t.getAttribute("aria-expanded") === "true";
+    preferFitnessPatch = true;
+    if (expanded) {
+      setUi({ fitnessOpenMode: "none", fitnessOpenExerciseId: "" });
+    } else {
+      setUi({ fitnessOpenMode: "one", fitnessOpenExerciseId: id });
+    }
+    return;
+  }
+
+  if (action === "fitness-expand-all") {
+    preferFitnessPatch = true;
+    setUi({ fitnessOpenMode: "all", fitnessOpenExerciseId: null });
+    return;
+  }
+
+  if (action === "fitness-collapse-all") {
+    preferFitnessPatch = true;
+    setUi({ fitnessOpenMode: "none", fitnessOpenExerciseId: "" });
+    return;
+  }
+
+  if (action === "toggle-session-timer") {
+    toggleSessionTimer(t.dataset.session);
     return;
   }
 
@@ -1054,7 +1095,7 @@ app.addEventListener("click", (event) => {
 
   if (action === "toggle-equipment") {
     const removed = toggleEquipment(t.dataset.id);
-    if (removed > 0) showToast(`${removed} exercise${removed === 1 ? "" : "s"} removed — no matching equipment`);
+    if (removed > 0) showToast(`${removed} exercise${removed === 1 ? "" : "s"} removed. No matching equipment`);
     const settings = state.fitnessSettings || defaultFitnessSettings();
     if (settings.prefsCaptured && activeSessionForDate(state.fitnessLog)?.exercises?.length) {
       maybeRegenActiveWorkoutPlan({ toastLabel: "Plan updated for equipment" });
@@ -1266,6 +1307,7 @@ app.addEventListener("click", (event) => {
     deleteWorkout(sessionId);
     setUi({
       fitnessOpenExerciseId: null,
+      fitnessOpenMode: "one",
       modal: "workout-setup",
       fitnessPrefsMode: "build",
       selectedMuscleGroups: [],
@@ -1273,7 +1315,7 @@ app.addEventListener("click", (event) => {
       fitnessSessionMenuOpen: false,
       fitnessRestPresetsOpen: false,
     });
-    showToast("Fresh session — confirm setup, then pick muscles");
+    showToast("Fresh session. Confirm setup, then pick muscles");
     return;
   }
 
@@ -1335,6 +1377,33 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "toggle-profile-limits") {
+    setUi({ profileLimitsOpen: !ui.profileLimitsOpen });
+    return;
+  }
+
+  if (action === "copy-guest-link") {
+    const url = t.dataset.url || "";
+    if (!url) return;
+    navigator.clipboard?.writeText(url).then(
+      () => showToast("Guest link copied"),
+      () => showToast("Could not copy link")
+    );
+    return;
+  }
+
+  if (action === "copy-all-beta-links") {
+    const urls = listBetaGuestLinks()
+      .map((l) => l.url)
+      .join("\n");
+    if (!urls) return;
+    navigator.clipboard?.writeText(urls).then(
+      () => showToast("All beta links copied"),
+      () => showToast("Could not copy links")
+    );
+    return;
+  }
+
   if (action === "toggle-profile-day30") {
     const dayNum = state.challenge ? challengeDayNumber(state.challenge) : 0;
     const currentlyOpen =
@@ -1362,16 +1431,6 @@ app.addEventListener("click", (event) => {
     setUi({
       selectedDate: t.dataset.date,
       selectedDay: Number(t.dataset.day),
-      openBlockMenuIndex: null,
-    });
-    return;
-  }
-
-  if (action === "refresh-today") {
-    const key = ui.selectedDate || todayKey();
-    setUi({
-      selectedDate: key,
-      selectedDay: new Date(`${key}T12:00:00`).getDay(),
       openBlockMenuIndex: null,
     });
     return;
@@ -2213,12 +2272,15 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "profile-identity") {
+    const name = form.displayName.value.trim() || "Marco";
     updateSettings({
-      displayName: form.displayName.value.trim() || "Marco",
+      displayName: name,
       bio: form.bio.value.trim(),
       portfolioUrl: form.portfolioUrl.value.trim(),
       linkedinUrl: form.linkedinUrl.value.trim(),
     });
+    const activeId = listProfiles().find((p) => p.active)?.id;
+    if (activeId) renameProfile(activeId, name);
     showToast("Identity saved");
     return;
   }
@@ -2453,6 +2515,7 @@ app.addEventListener("submit", (event) => {
 });
 
 applyTheme(getStoredTheme(), { force: true });
+inject();
 loadState();
 if (state?.settings?.theme) applyTheme(state.settings.theme, { force: true });
 resetToTodayUi();
@@ -2466,17 +2529,21 @@ setUi({
 subscribe(render);
 render();
 
-/** Tick rest timer UI once per second while active (DOM patch — no full remount). */
+/** Tick rest timer + live session clock (DOM patch — no full remount). */
 setInterval(() => {
+  const onFitness = ui.tab === "freelance" && (ui.hustleView || "fitness") === "fitness";
   const timer = ui.restTimer;
-  if (!timer?.endsAt) return;
-  if (Date.now() >= timer.endsAt) {
-    setUi({ restTimer: null });
-    showToast("Rest done. Next set.");
-    return;
+  if (timer?.endsAt) {
+    if (Date.now() >= timer.endsAt) {
+      setUi({ restTimer: null });
+      showToast("Rest done. Next set.");
+      return;
+    }
+    if (onFitness) patchRestTimerBar();
   }
-  if (ui.tab === "freelance" && ui.hustleView === "fitness") {
-    if (!patchRestTimerBar()) render();
+  if (onFitness) {
+    const running = app.querySelector("[data-session-timer][data-running='1']");
+    if (running) patchSessionTimerClock(app, state);
   }
 }, 1000);
 

@@ -4,7 +4,7 @@ import { isDone } from "../../streaks.js";
 
 export function formatTimeShort(timeStr) {
   const mins = parseTimeToMinutes(timeStr);
-  if (mins == null) return "—";
+  if (mins == null) return "-";
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   const am = h < 12;

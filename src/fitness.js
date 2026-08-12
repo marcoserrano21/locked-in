@@ -77,10 +77,10 @@ export function defaultFitnessSettings() {
 }
 
 export const SESSION_DURATIONS = [
-  { id: 30, label: "30", detail: "4–6 exercises" },
-  { id: 45, label: "45", detail: "6–8 exercises" },
-  { id: 60, label: "60", detail: "8–10 exercises" },
-  { id: 90, label: "90", detail: "12–14 exercises" },
+  { id: 30, label: "30", detail: "4-6 exercises" },
+  { id: 45, label: "45", detail: "6-8 exercises" },
+  { id: 60, label: "60", detail: "8-10 exercises" },
+  { id: 90, label: "90", detail: "12-14 exercises" },
 ];
 
 export const EXPERIENCE_LEVELS = [
@@ -103,13 +103,13 @@ export const FITNESS_GOALS = [
 
 /** Identity / psychology reasons — multi-select up to 3 */
 export const WHY_YOU_TRAIN = [
-  { id: "mental_health", label: "Mental health", line: "Training as emotional architecture — chemistry first." },
+  { id: "mental_health", label: "Mental health", line: "Training as emotional architecture. Chemistry first." },
   { id: "structure", label: "Structure & routine", line: "The gym gives the day a spine." },
   { id: "energy", label: "More energy", line: "Train so the rest of the day feels lighter." },
   { id: "confidence", label: "Confidence", line: "Capability, not vanity. Hard things compound." },
   { id: "community", label: "Community", line: "Quiet camaraderie of shared effort." },
   { id: "habit", label: "Build the habit", line: "Not going feels wrong. Keep the momentum." },
-  { id: "performance", label: "Performance", line: "What can this body do — and how does it adapt?" },
+  { id: "performance", label: "Performance", line: "What can this body do, and how does it adapt?" },
   { id: "discipline", label: "Discipline", line: "Show up even when you don’t feel like it." },
 ];
 
@@ -186,14 +186,36 @@ export function sessionSetCount(session) {
   }, 0);
 }
 
-/** Elapsed minutes from startedAt → completedAt (min 1 when sealed). */
+/** Elapsed minutes from workout timer if used, else startedAt → completedAt. */
 export function sessionDurationMinutes(session) {
+  const timedMs = liveSessionElapsedMs(session, Date.now());
+  if (timedMs > 0 || session?.timerStartedAt || Number(session?.timerElapsedMs) > 0) {
+    return Math.max(1, Math.round(timedMs / 60000));
+  }
   const start = session?.startedAt ? Date.parse(session.startedAt) : NaN;
   const end = session?.completedAt ? Date.parse(session.completedAt) : Date.now();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
     return session?.completedAt ? 1 : 0;
   }
   return Math.max(1, Math.round((end - start) / 60000));
+}
+
+/** Active-time ms: paused accumulator + running segment. */
+export function liveSessionElapsedMs(session, now = Date.now()) {
+  const base = Math.max(0, Number(session?.timerElapsedMs) || 0);
+  if (!session?.timerStartedAt) return base;
+  const started = Date.parse(session.timerStartedAt);
+  if (!Number.isFinite(started)) return base;
+  return base + Math.max(0, now - started);
+}
+
+export function formatSessionClock(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function isStreakMilestone(n) {
@@ -612,6 +634,8 @@ export function makeWorkoutSession(date = todayKey()) {
     date,
     startedAt: new Date().toISOString(),
     completedAt: null,
+    timerStartedAt: null,
+    timerElapsedMs: 0,
     exercises: [],
     notes: "",
   };

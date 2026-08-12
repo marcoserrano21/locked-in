@@ -20,6 +20,8 @@ import {
   sessionVolumeHistory,
   muscleBalanceCounts,
   sparklinePath,
+  liveSessionElapsedMs,
+  formatSessionClock,
 } from "../fitness.js";
 import { isBodyweightExercise } from "../fitness-plan.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
@@ -109,6 +111,30 @@ function pairGroupLabel(pairType, pairId) {
   return "Superset";
 }
 
+function isExerciseOpen(ui, exerciseId, fallbackId = null) {
+  const mode = ui.fitnessOpenMode || "one";
+  if (mode === "all") return true;
+  if (mode === "none") return false;
+  const openId = ui.fitnessOpenExerciseId == null ? fallbackId : ui.fitnessOpenExerciseId;
+  return Boolean(openId && openId === exerciseId);
+}
+
+function renderSessionTimerBar(session) {
+  const running = Boolean(session?.timerStartedAt);
+  const ms = liveSessionElapsedMs(session, Date.now());
+  const label = formatSessionClock(ms);
+  return `
+    <div class="session-timer-bar" data-session-timer data-session="${escapeHtml(session.id)}" data-running="${running ? "1" : "0"}">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Session</p>
+        <p class="session-timer-count" data-session-clock>${escapeHtml(label)}</p>
+      </div>
+      <button type="button" class="btn ${running ? "" : "btn-primary"} !min-h-10 !px-4 !text-xs" data-action="toggle-session-timer" data-session="${escapeHtml(session.id)}">
+        ${running ? "Pause" : "Start"}
+      </button>
+    </div>`;
+}
+
 function groupSessionExercises(exercises = []) {
   const groups = [];
   const consumed = new Set();
@@ -156,7 +182,7 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
   return `
     <article class="panel fitness-exercise-card ${open ? "is-open" : "is-collapsed"}" data-exercise-card data-exercise-id="${escapeHtml(exercise.id)}" data-session-id="${escapeHtml(session.id)}" data-exercise-name="${escapeHtml(exercise.name)}" data-pair-id="${escapeHtml(exercise.pairId || "")}" data-pair-type="${escapeHtml(exercise.pairType || "")}">
       <div class="flex items-start gap-2">
-        <button type="button" class="icon-btn fitness-drag-handle shrink-0 !min-h-10 !min-w-10" draggable="true" data-action="fitness-drag-handle" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" aria-label="Drag to reorder ${escapeHtml(exercise.name)}">${icon("grip", "h-4 w-4")}</button>
+        <button type="button" class="icon-btn fitness-drag-handle shrink-0 !min-h-11 !min-w-11" draggable="true" data-action="fitness-drag-handle" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" aria-label="Drag to reorder ${escapeHtml(exercise.name)}">${icon("grip", "h-4 w-4")}</button>
         <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" data-action="toggle-fitness-exercise" data-exercise="${escapeHtml(exercise.id)}" aria-expanded="${open}">
           ${renderMuscleThumb(exercise.muscleGroup, "lg")}
           <span class="min-w-0 flex-1">
@@ -184,7 +210,7 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
   `;
 }
 
-function renderPairGroup(group, session, settings, log, openId) {
+function renderPairGroup(group, session, settings, log, ui, fallbackId) {
   const label = pairGroupLabel(group.pairType, group.pairId);
   const kindClass = group.kind === "circuit" ? "is-circuit" : "is-superset";
   return `
@@ -203,7 +229,7 @@ function renderPairGroup(group, session, settings, log, openId) {
         ${group.exercises
           .map((ex) =>
             renderExerciseCard(ex, session, settings, log, {
-              open: openId === ex.id,
+              open: isExerciseOpen(ui, ex.id, fallbackId),
               hidePairBadge: true,
             })
           )
@@ -243,10 +269,7 @@ function renderTodayPanel(state, ui) {
     const sets = ex.sets || [];
     return !sets.length || sets.some((s) => !s.done);
   });
-  const openId =
-    ui.fitnessOpenExerciseId == null
-      ? firstIncomplete?.id || exercises[0]?.id || null
-      : ui.fitnessOpenExerciseId;
+  const fallbackId = firstIncomplete?.id || exercises[0]?.id || null;
   const focusGroups = [...new Set(exercises.map((ex) => muscleLabel(ex.muscleGroup)).filter(Boolean))].slice(0, 3);
   const focusText = focusGroups.length ? focusGroups.join("/") : "Custom";
   const sessionMenuOpen = ui.fitnessSessionMenuOpen;
@@ -273,7 +296,9 @@ function renderTodayPanel(state, ui) {
           }
         </div>
       </div>
+      ${renderSessionTimerBar(session)}
       ${renderRestTimerBar(ui)}
+      <p class="text-[11px]" style="color:var(--mute)">Start the clock when you begin. Log every set. Rest between moves. Complete when done.</p>
       ${
         ui.fitnessRestPresetsOpen
           ? `<div class="flex gap-1">
@@ -286,6 +311,14 @@ function renderTodayPanel(state, ui) {
       </div>`
           : ""
       }
+      ${
+        exercises.length
+          ? `<div class="flex gap-1">
+        <button type="button" class="btn flex-1 !min-h-9 !text-xs" data-action="fitness-expand-all">Expand all</button>
+        <button type="button" class="btn flex-1 !min-h-9 !text-xs" data-action="fitness-collapse-all">Collapse all</button>
+      </div>`
+          : ""
+      }
     </section>
 
     <div class="fitness-exercise-list" data-fitness-list data-session="${escapeHtml(session.id)}">
@@ -295,9 +328,9 @@ function renderTodayPanel(state, ui) {
             .map((group) =>
               group.kind === "solo"
                 ? renderExerciseCard(group.exercises[0], session, settings, log, {
-                    open: openId === group.exercises[0].id,
+                    open: isExerciseOpen(ui, group.exercises[0].id, fallbackId),
                   })
-                : renderPairGroup(group, session, settings, log, openId)
+                : renderPairGroup(group, session, settings, log, ui, fallbackId)
             )
             .join("")
         : `<section class="panel-quiet text-center py-6"><p class="text-sm" style="color:var(--mute)">No exercises yet. Add your first move.</p></section>`
@@ -353,11 +386,11 @@ function renderHistoryPanel(state, settings, ui) {
 
   const highlighted =
     focus === "volume"
-      ? "Volume trend selected — recent sessions ranked by load."
+      ? "Volume trend selected. Recent sessions ranked by load."
       : focus === "sessions"
-        ? "Sessions / week selected — this week's completed work."
+        ? "Sessions / week selected. This week's completed work."
         : focus === "balance"
-          ? "Muscle balance selected — where you've been training."
+          ? "Muscle balance selected. Where you've been training."
           : "";
 
   const listSource =
@@ -476,6 +509,44 @@ export function renderFitness(state, ui) {
       ${menu}
     </section>
   `;
+}
+
+/** Patch open/collapsed classes without remounting the exercise list. */
+export function patchFitnessExpandState(root, state, ui) {
+  const list = root?.querySelector?.("[data-fitness-list]");
+  if (!list) return false;
+  const date = todayKey();
+  const session = activeSessionForDate(state.fitnessLog || [], date);
+  const exercises = session?.exercises || [];
+  const firstIncomplete = exercises.find((ex) => {
+    const sets = ex.sets || [];
+    return !sets.length || sets.some((s) => !s.done);
+  });
+  const fallbackId = firstIncomplete?.id || exercises[0]?.id || null;
+  list.querySelectorAll("[data-exercise-card]").forEach((card) => {
+    const id = card.dataset.exerciseId;
+    const open = isExerciseOpen(ui, id, fallbackId);
+    card.classList.toggle("is-open", open);
+    card.classList.toggle("is-collapsed", !open);
+    const body = card.querySelector(".fitness-exercise-body");
+    if (body) body.classList.toggle("is-open", open);
+    const toggle = card.querySelector('[data-action="toggle-fitness-exercise"]');
+    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  return true;
+}
+
+/** Tick live session clock without full remount. */
+export function patchSessionTimerClock(root, state) {
+  const bar = root?.querySelector?.("[data-session-timer]");
+  if (!bar) return false;
+  const sessionId = bar.dataset.session;
+  const session = (state.fitnessLog || []).find((s) => s.id === sessionId);
+  if (!session) return false;
+  const clock = bar.querySelector("[data-session-clock]");
+  if (clock) clock.textContent = formatSessionClock(liveSessionElapsedMs(session, Date.now()));
+  bar.dataset.running = session.timerStartedAt ? "1" : "0";
+  return true;
 }
 
 export function renderAddExerciseModal(ui, settings) {

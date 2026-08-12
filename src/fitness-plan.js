@@ -440,7 +440,7 @@ export function levelVolumeHint(level = "beginner", groupCount = 1, splitType = 
     sessionMinutes: volume.sessionMinutes,
     sets: level === "expert" ? 4 : 3,
     reps: 10,
-    label: `${level[0].toUpperCase()}${level.slice(1)} · ${volume.sessionMinutes}m · ${volume.min}–${volume.max} exercises`,
+    label: `${level[0].toUpperCase()}${level.slice(1)} · ${volume.sessionMinutes}m · ${volume.min}-${volume.max} exercises`,
   };
 }
 

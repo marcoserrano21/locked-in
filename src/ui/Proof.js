@@ -82,19 +82,19 @@ function lastWeekRecap(state, log, unit) {
   });
   const workouts = completedSessions(log).filter((s) => keys.includes(s.date));
   const vol = workouts.reduce((sum, s) => sum + sessionVolume(s, unit), 0);
-  const range = `${formatDisplayDate(keys[0])} – ${formatDisplayDate(keys[6])}`;
+  const range = `${formatDisplayDate(keys[0])} - ${formatDisplayDate(keys[6])}`;
   return { keys, sealed, workouts: workouts.length, vol, range };
 }
 
 function proofInsights(state, log, weekCount) {
   const lines = [];
-  if (weekCount === 0) lines.push("0 workouts this week — schedule one session.");
+  if (weekCount === 0) lines.push("0 workouts this week. Schedule one session.");
   else if (weekCount === 1) lines.push("One session logged. A second locks the week.");
   else lines.push(`${weekCount} workouts this week. Momentum is real.`);
 
   const coreToday = dayCompletion(state, 0);
   if (coreToday.coreCount > 0 && coreToday.doneCore / coreToday.coreCount < 0.5) {
-    lines.push("Core completion lagging today — close the open blocks.");
+    lines.push("Core completion lagging today. Close the open blocks.");
   } else if (computeStreak(state) === 0) {
     lines.push("Day streak reset. Protect tomorrow's first block.");
   }
@@ -230,7 +230,7 @@ export function renderProof(state, ui) {
           ? `<section class="panel mb-3">
         <p class="eyebrow">Fresh start</p>
         <h2 class="display text-3xl mt-1">Day ${Math.max(1, dayNum)} of 30</h2>
-        <p class="mt-2 text-sm" style="color:var(--mute)">Let's build your first entry. Seal a day or finish a workout — then Proof fills in.</p>
+        <p class="mt-2 text-sm" style="color:var(--mute)">Let's build your first entry. Seal a day or finish a workout. Then Proof fills in.</p>
         <button type="button" class="btn btn-primary mt-4 w-full" data-action="set-tab" data-tab="today">Open Today</button>
       </section>`
           : ""

@@ -62,7 +62,7 @@ export function renderFitnessPrefsModal(ui, state) {
           <div>
             <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Body weight</p>
             <div class="flex items-center gap-2">
-              <div class="segment shrink-0" role="group" aria-label="Weight unit">
+              <div class="segment segment-sm shrink-0" role="group" aria-label="Weight unit">
                 <button type="button" class="segment-btn ${unit === "lb" ? "is-active accent" : ""}" data-action="set-fitness-unit" data-unit="lb">LB</button>
                 <button type="button" class="segment-btn ${unit === "kg" ? "is-active accent" : ""}" data-action="set-fitness-unit" data-unit="kg">KG</button>
               </div>
