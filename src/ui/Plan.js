@@ -55,7 +55,7 @@ export function renderPlan(state, ui, opts = {}) {
 
   const pillsHtml = DAY_NAMES.map((name, i) => {
     const t = dayType(i);
-    return `<button type="button" class="pill-day snap-start shrink-0 ${t} ${i === day ? "is-active" : ""}" data-action="select-day" data-day="${i}">${name}</button>`;
+    return `<button type="button" class="pill-day ${t} ${i === day ? "is-active" : ""}" data-action="select-day" data-day="${i}">${name}</button>`;
   }).join("");
 
   const templateBlocks = blocksFor(state, day);
@@ -108,11 +108,11 @@ export function renderPlan(state, ui, opts = {}) {
                 value: selectedDate,
                 action: "set-override-date",
               })}
-              <div class="mt-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory">${week
+              <div class="mt-3 day-pill-grid" role="group" aria-label="This week">${week
                 .map((key) => {
                   const dow = new Date(`${key}T12:00:00`).getDay();
                   const active = key === selectedDate;
-                  return `<button type="button" class="pill-day ${dayType(dow)} ${active ? "is-active" : ""} snap-start shrink-0" data-action="pick-override-date" data-date="${key}" data-day="${dow}" aria-pressed="${active}">${DAY_NAMES[dow]}</button>`;
+                  return `<button type="button" class="pill-day ${dayType(dow)} ${active ? "is-active" : ""}" data-action="pick-override-date" data-date="${key}" data-day="${dow}" aria-pressed="${active}">${DAY_NAMES[dow]}</button>`;
                 })
                 .join("")}</div>
             </section>
@@ -129,7 +129,7 @@ export function renderPlan(state, ui, opts = {}) {
       ${
         mode === "template"
           ? `<section class="panel">
-              <div class="mb-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory">${pillsHtml}</div>
+              <div class="mb-3 day-pill-grid" role="group" aria-label="Weekday templates">${pillsHtml}</div>
               <p class="mb-3 text-sm font-semibold">${DAY_NAMES[day]} · ${dayType(day) === "foundation" ? "build template" : "work template"}</p>
               ${renderBlockTimeline(blocks, { mode: "template", day, date: selectedDate, openBlockMenuIndex: ui.openBlockMenuIndex, onEmpty: "No blocks. Add one below." })}
               <button type="button" class="btn btn-primary mt-4 w-full gap-2" data-action="add-block" data-mode="template" data-day="${day}" data-date="${selectedDate}">
@@ -173,7 +173,7 @@ export function renderBlockEditorModal(ui) {
 
   return `
     <div class="modal-backdrop">
-      <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add block" : "Edit block"}" data-stop>
+      <div class="modal-sheet block-editor-modal" role="dialog" aria-modal="true" aria-label="${isNew ? "Add block" : "Edit block"}" data-stop>
         <h2 class="display text-3xl">${isNew ? "Add block" : "Edit block"}</h2>
         <form class="mt-4 space-y-3" data-action="save-block">
           <input type="hidden" name="day" value="${draft.day}" />
@@ -201,7 +201,10 @@ export function renderBlockEditorModal(ui) {
             <input type="checkbox" name="soft" ${draft.soft ? "checked" : ""} />
             Soft target (does not count toward streak)
           </label>
-          <button type="submit" class="btn btn-primary w-full">Save block</button>
+          <div class="flex gap-2 pt-2">
+            <button type="button" class="btn flex-1" data-action="close-modal">Cancel</button>
+            <button type="submit" class="btn btn-primary flex-1" disabled>Save block</button>
+          </div>
         </form>
       </div>
     </div>
@@ -241,6 +244,23 @@ export function createBlockFromForm(form) {
     soft: Boolean(form.soft?.checked),
     tags: normalizeTags(tags),
   };
+}
+
+export function isSaveBlockEnabled(form, editingBlock) {
+  if (!form) return false;
+  const next = createBlockFromForm(form);
+  if (!next.label) return false;
+  const timeBase = snapTimeInputToDisplay(formatTimeForInput(editingBlock?.time || "") || "08:00");
+  const tagsBase = tagsToFormValue(
+    normalizeTags(Array.isArray(editingBlock?.tags) ? editingBlock.tags : parseTagsFromForm(editingBlock?.tags || ""))
+  );
+  const dirty =
+    next.label !== String(editingBlock?.label || "").trim() ||
+    next.time !== timeBase ||
+    next.details !== String(editingBlock?.details || "").trim() ||
+    Boolean(next.soft) !== Boolean(editingBlock?.soft) ||
+    tagsToFormValue(next.tags) !== tagsBase;
+  return dirty;
 }
 
 export { renderShiftSheet } from "./plan/ShiftSheet.js";

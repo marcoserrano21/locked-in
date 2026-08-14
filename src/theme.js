@@ -6,6 +6,18 @@ export function getStoredTheme() {
   return localStorage.getItem(THEME_KEY) || "dark";
 }
 
+export function normalizeTextSize(value) {
+  return ["default", "medium", "large"].includes(value) ? value : "default";
+}
+
+export function applyTextSize(size, opts = {}) {
+  const next = normalizeTextSize(size);
+  const current = document.documentElement.getAttribute("data-text-size") || "default";
+  if (current === next && !opts.force) return next;
+  document.documentElement.setAttribute("data-text-size", next);
+  return next;
+}
+
 export function applyTheme(theme, opts = {}) {
   const next = ["dark", "light", "high"].includes(theme) ? theme : "dark";
   const current = document.documentElement.getAttribute("data-theme");

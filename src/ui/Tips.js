@@ -25,6 +25,10 @@ const FITNESS_TIPS = [
     body: "Tap the body map or chips, then Build. We fill compounds and accessories for your gear.",
   },
   {
+    title: "Reorder and group",
+    body: "Drag the grip to reorder. Use Add on a SUPERSET or CIRCUIT to join a move. Undo shows briefly after you change order.",
+  },
+  {
     title: "Log sets, then seal",
     body: "Check every set with weight and reps. Complete locks the session into History proof.",
   },

@@ -10,16 +10,20 @@ const TABS = [
 
 export function visibleTabs(state) {
   const s = state?.settings || {};
-  const full = s.appMode === "full";
   const unlocked = s.modulesUnlocked || {};
   const isMarco = state?.preset === "marco";
   const moneyLabel = isMarco ? "Miles" : "Money";
+  const focus = s.welcomeFocus;
+  const freelanceLabel = focus === "schedule" ? "Hustle" : "Train";
   return TABS.filter((t) => {
-    if (full) return true;
     if (t.id === "proof") return Boolean(unlocked.proof);
     if (t.id === "miles") return Boolean(unlocked.miles);
     return t.id === "today" || t.id === "freelance" || t.id === "profile";
-  }).map((t) => (t.id === "miles" ? { ...t, label: moneyLabel } : t));
+  }).map((t) => {
+    if (t.id === "miles") return { ...t, label: moneyLabel };
+    if (t.id === "freelance") return { ...t, label: freelanceLabel };
+    return t;
+  });
 }
 
 export function renderNav(activeTab, state) {
@@ -31,8 +35,8 @@ export function renderNav(activeTab, state) {
           .map(
             (t) => `
           <button type="button" class="nav-item ${activeTab === t.id ? "is-active" : ""}" data-action="set-tab" data-tab="${t.id}" role="tab" aria-selected="${activeTab === t.id}">
-            ${icon(t.icon, "h-[18px] w-[18px]")}
-            <span>${t.label}</span>
+            <span class="nav-icon">${icon(t.icon, "h-[18px] w-[18px]")}</span>
+            <span class="nav-label">${t.label}</span>
           </button>`
           )
           .join("")}

@@ -228,7 +228,9 @@ function renderHustlePanel(state, ui) {
 }
 
 export function renderFreelance(state, ui) {
-  const view = ui.hustleView || "fitness";
+  const focus = state.settings?.welcomeFocus;
+  const fallbackView = focus === "schedule" ? "hustle" : "fitness";
+  const view = ui.hustleView || fallbackView;
   const premium = Boolean(state.settings?.premiumUnlocked);
   const title = !premium || view === "fitness" ? "Growth" : "Command center";
   const subtitle = !premium || view === "fitness" ? "Fitness tracker" : "Hustle";
@@ -250,7 +252,7 @@ export function renderFreelance(state, ui) {
       ? `${renderFitness(state, ui)}${
           premium
             ? ""
-            : `<p class="mt-3 text-center text-xs" style="color:var(--mute)"><button type="button" class="underline" data-action="open-premium-unlock">Unlock Premium preview</button></p>`
+            : `<p class="mt-3 text-center help-text"><button type="button" class="underline" data-action="set-tab" data-tab="profile">Enable command center (beta) in Profile</button></p>`
         }`
       : renderHustlePanel(state, ui);
 

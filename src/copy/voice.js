@@ -22,7 +22,7 @@ export const copy = {
     step3Title: "Build days",
     step3Subtitle: "Pick build days and a starter template. Edit blocks anytime.",
     step4Title: "Simple or Complete?",
-    step4Subtitle: "Simple keeps Today, Fitness, and Profile. Complete unlocks Proof and Miles from day one.",
+    step4Subtitle: "Simple keeps Today, Train, and Profile. Complete still starts quiet. Proof unlocks after your first core check.",
     step5Title: "Lock in.",
     step5Subtitle: "Pick your challenge length. Proof over vibes.",
   },
@@ -46,7 +46,7 @@ export const copy = {
     shareLastWeek: "Share week proof",
   },
   challenge: {
-    locked90: "90-day lock-in is Premium",
+    locked90: "90-day lock-in is a beta preview",
     customLabel: "Custom days (7-365)",
     customSave: "Set length",
   },

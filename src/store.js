@@ -14,6 +14,8 @@ import {
   suggestedNextLoad,
   touchRecentExercise,
   buildWorkoutCompletionPayload,
+  buildWorkoutEndedPayload,
+  advanceFocusAfterSession,
 } from "./fitness.js";
 import { getHustlePack } from "./hustle-packs.js";
 import { BLOCK_PRESETS } from "./setup-presets.js";
@@ -81,7 +83,9 @@ export let ui = {
   fitnessAddSession: null,
   fitnessEquipmentOpen: false,
   fitnessOpenExerciseId: null,
-  fitnessOpenMode: "one",
+  fitnessOpenMode: "multi",
+  fitnessOpenIds: null,
+  fitnessCollapsedPairIds: [],
   profileLimitsOpen: false,
   fitnessPrefsStep: 1,
   fitnessPrefsMode: "build",
@@ -89,9 +93,17 @@ export let ui = {
   tipsTrack: null,
   welcomeStep: 1,
   welcomeName: "",
-  welcomeFocus: "both",
+  welcomeFocus: null,
   welcomeAppMode: "simple",
+  welcomeChallengeLength: 30,
+  setupTipId: null,
   restTimer: null,
+  fitnessWarmupChecked: [],
+  fitnessWarmupCollapsed: false,
+  fitnessUndo: null,
+  fitnessCooldownChecked: [],
+  fitnessCooldownSkipped: false,
+  rebuildSessionId: null,
   todayView: "list",
   setupWizardStep: 1,
   setupBuildDays: [0, 1, 2],
@@ -278,6 +290,7 @@ function defaultProfileData() {
       uberSoftStop: CHALLENGE_META.uberSoftStop,
       yesterdayCatchUp: true,
       theme: "dark",
+      textSize: "default",
       displayName: "Marco",
       bio: "Product builder who turns messy operations into clear tools.",
       portfolioUrl: "https://marco-serrano.netlify.app/",
@@ -329,6 +342,7 @@ function blankProfileData(displayName = "New track") {
       fitnessTourCompleted: false,
       modulesUnlocked: { proof: false, miles: false },
       premiumUnlocked: false,
+      moneyMode: "hours",
       hustlePlaybook: null,
     },
   };
@@ -782,6 +796,14 @@ export function setThemeSetting(theme) {
   }));
 }
 
+export function setTextSizeSetting(size) {
+  const textSize = ["default", "medium", "large"].includes(size) ? size : "default";
+  patchState((s) => ({
+    ...s,
+    settings: { ...s.settings, textSize },
+  }));
+}
+
 export function addEvent(event) {
   patchState((s) => ({
     ...s,
@@ -886,8 +908,8 @@ export function setAppMode(mode) {
       appMode,
       modulesUnlocked:
         appMode === "full"
-          ? { proof: true, miles: true }
-          : { proof: false, miles: false },
+          ? { ...(s.settings?.modulesUnlocked || {}), miles: true }
+          : { ...(s.settings?.modulesUnlocked || {}), miles: false },
     },
   }));
 }
@@ -946,7 +968,7 @@ export function setDay30Answer(questionId, answer) {
 }
 
 export function completeWelcome(displayName, focus = "both", appMode = "simple") {
-  const name = String(displayName || "").trim() || "My track";
+  const name = String(displayName || "").trim().slice(0, 24) || "My track";
   const mode = appMode === "full" ? "full" : "simple";
   if (appRoot?.profiles?.[appRoot.activeProfileId]) {
     appRoot.profiles[appRoot.activeProfileId].preset = "blank";
@@ -964,7 +986,9 @@ export function completeWelcome(displayName, focus = "both", appMode = "simple")
       appMode: mode,
       welcomeFocus: focus,
       modulesUnlocked:
-        mode === "full" ? { proof: true, miles: true } : { proof: false, miles: false },
+        mode === "full"
+          ? { proof: false, miles: true }
+          : { proof: false, miles: false },
     },
   }));
   setUi({
@@ -985,7 +1009,7 @@ export function finishOnboarding({
   blockPreset = "morning",
   challengeLength = 30,
 } = {}) {
-  const name = String(displayName || "").trim() || "My track";
+  const name = String(displayName || "").trim().slice(0, 24) || "My track";
   const mode = appMode === "full" ? "full" : "simple";
   needsWelcome = false;
   if (appRoot?.profiles?.[appRoot.activeProfileId]) {
@@ -1019,8 +1043,8 @@ export function finishOnboarding({
         onboardingCompleted: true,
         modulesUnlocked:
           mode === "full"
-            ? { proof: true, miles: true }
-            : { ...(s.settings?.modulesUnlocked || {}), proof: false, miles: false },
+            ? { ...(s.settings?.modulesUnlocked || {}), proof: Boolean(s.settings?.modulesUnlocked?.proof), miles: true }
+            : { ...(s.settings?.modulesUnlocked || {}), proof: Boolean(s.settings?.modulesUnlocked?.proof), miles: false },
       },
     };
     return startChallenge(withSettings);
@@ -1061,11 +1085,11 @@ export function applySetupWizard({
       ...s.settings,
       buildDays: [...buildDays],
       moneyLabel: modules.money ? s.settings?.moneyLabel || "Side income" : s.settings?.moneyLabel,
-      moneyMode: s.settings?.moneyMode || "miles",
+      moneyMode: s.preset === "marco" ? "miles" : s.settings?.moneyMode || "hours",
       setupWizardCompleted: true,
       modulesUnlocked: {
-        proof: Boolean(s.settings?.modulesUnlocked?.proof) || Boolean(modules.money),
-        miles: Boolean(modules.money) || s.settings?.appMode === "full",
+        proof: Boolean(s.settings?.modulesUnlocked?.proof),
+        miles: Boolean(modules.money),
         hustle: Boolean(modules.hustle),
         fitness: modules.fitness !== false,
       },
@@ -1121,7 +1145,7 @@ export function restartFromOnboarding() {
     modal: "welcome",
     welcomeStep: 1,
     welcomeName: "",
-    welcomeFocus: "both",
+    welcomeFocus: null,
     welcomeAppMode: "simple",
     editingBlock: null,
     editingEvent: null,
@@ -1198,7 +1222,13 @@ export function addExerciseToSession(sessionId, name, muscleGroup = "", planMeta
   patchState((s) => {
     const unitPref = s.fitnessSettings?.preferredUnit || "lb";
     const group = muscleGroup || catalog?.muscleGroup || "";
-    const hint = suggestedNextLoad(s.fitnessLog, trimmed, unitPref);
+    const hint = suggestedNextLoad(
+      s.fitnessLog,
+      trimmed,
+      unitPref,
+      s.fitnessSettings?.goal,
+      s.fitnessSettings?.focusExercise
+    );
     const reps = planMeta.reps != null ? Number(planMeta.reps) : hint.reps;
     const weight = planMeta.weight != null ? Number(planMeta.weight) : hint.weight;
     const seed = {
@@ -1211,7 +1241,7 @@ export function addExerciseToSession(sessionId, name, muscleGroup = "", planMeta
       pairId: planMeta.pairId,
       pairType: planMeta.pairType,
       role: planMeta.role,
-      restSeconds: planMeta.restSeconds,
+      restSeconds: planMeta.restSeconds ?? hint.restSeconds,
     });
     return {
       ...s,
@@ -1234,7 +1264,13 @@ export function replaceSessionExercises(sessionId, plan = []) {
   patchState((s) => {
     const unitPref = s.fitnessSettings?.preferredUnit || "lb";
     const exercises = (plan || []).map((ex) => {
-      const hint = suggestedNextLoad(s.fitnessLog, ex.name, unitPref);
+      const hint = suggestedNextLoad(
+        s.fitnessLog,
+        ex.name,
+        unitPref,
+        s.fitnessSettings?.goal,
+        s.fitnessSettings?.focusExercise
+      );
       const reps = ex.reps != null ? Number(ex.reps) : hint.reps;
       const weight = ex.weight != null ? Number(ex.weight) : hint.weight;
       return makeExercise(ex.name, ex.muscleGroup || "", unitPref, {
@@ -1246,7 +1282,7 @@ export function replaceSessionExercises(sessionId, plan = []) {
         pairId: ex.pairId,
         pairType: ex.pairType,
         role: ex.role,
-        restSeconds: ex.restSeconds,
+        restSeconds: ex.restSeconds ?? hint.restSeconds,
       });
     });
     return {
@@ -1303,7 +1339,13 @@ export function addFitnessSet(sessionId, exerciseId) {
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
         mapExercise(session, exerciseId, (ex) => {
           const last = (ex.sets || [])[(ex.sets || []).length - 1];
-          const hint = suggestedNextLoad(s.fitnessLog, ex.name, unit);
+          const hint = suggestedNextLoad(
+            s.fitnessLog,
+            ex.name,
+            unit,
+            s.fitnessSettings?.goal,
+            s.fitnessSettings?.focusExercise
+          );
           const seed = last
             ? { weight: Number(last.weight) || 0, reps: Number(last.reps) || hint.reps || 8, unit: last.unit || unit }
             : hint;
@@ -1368,13 +1410,13 @@ export function deleteFitnessExercise(sessionId, exerciseId) {
 /** Reorder an exercise within a session by moving fromId near toId.
  * Dropping onto a superset/circuit member joins that pair and keeps members contiguous.
  */
-export function reorderFitnessExercise(sessionId, fromId, toId, { joinPair = true, forcePair = null } = {}) {
+export function reorderFitnessExercise(sessionId, fromId, toId, { joinPair = true, forcePair = null, leavePair = false, insertAfter = false } = {}) {
   if (!sessionId || !fromId || !toId || fromId === toId) return false;
   let moved = false;
   patchState((s) => ({
     ...s,
     fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
-      const list = [...(session.exercises || [])];
+      const list = [...(session.exercises || [])].map((ex) => ({ ...ex }));
       const fromIdx = list.findIndex((ex) => ex.id === fromId);
       const toIdx = list.findIndex((ex) => ex.id === toId);
       if (fromIdx < 0 || toIdx < 0) return session;
@@ -1386,17 +1428,158 @@ export function reorderFitnessExercise(sessionId, fromId, toId, { joinPair = tru
       if (forcePair?.pairId) {
         item.pairId = forcePair.pairId;
         item.pairType = forcePair.pairType || "superset";
+      } else if (leavePair || !(joinPair && target?.pairId && target?.pairType)) {
+        item.pairId = null;
+        item.pairType = null;
       } else if (joinPair && target?.pairId && target?.pairType) {
         item.pairId = target.pairId;
         item.pairType = target.pairType;
       }
 
-      list.splice(targetIdx, 0, item);
+      const insertAt = insertAfter ? targetIdx + 1 : targetIdx;
+      list.splice(insertAt, 0, item);
       moved = true;
-      return { ...session, exercises: normalizePairContiguity(list) };
+      return { ...session, exercises: cleanupOrphanPairs(normalizePairContiguity(list)) };
     }),
   }));
   return moved;
+}
+
+/** Move an entire superset/circuit block before another exercise (block stays grouped). */
+export function reorderFitnessPairBlock(sessionId, fromPairId, beforeExerciseId) {
+  if (!sessionId || !fromPairId || !beforeExerciseId) return false;
+  let moved = false;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      const list = (session.exercises || []).map((ex) => ({ ...ex }));
+      const block = list.filter((ex) => ex.pairId === fromPairId);
+      if (!block.length) return session;
+      const target = list.find((ex) => ex.id === beforeExerciseId);
+      if (!target || target.pairId === fromPairId) return session;
+      const without = list.filter((ex) => ex.pairId !== fromPairId);
+      const insertAt = without.findIndex((ex) => ex.id === beforeExerciseId);
+      if (insertAt < 0) return session;
+      without.splice(insertAt, 0, ...block);
+      moved = true;
+      return { ...session, exercises: cleanupOrphanPairs(normalizePairContiguity(without)) };
+    }),
+  }));
+  return moved;
+}
+
+/** Append a solo exercise after the last item in the session. */
+export function moveFitnessExerciseToEnd(sessionId, fromId, { leavePair = true } = {}) {
+  if (!sessionId || !fromId) return false;
+  let moved = false;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      const list = (session.exercises || []).map((ex) => ({ ...ex }));
+      const fromIdx = list.findIndex((ex) => ex.id === fromId);
+      if (fromIdx < 0) return session;
+      if (fromIdx === list.length - 1) {
+        const item = list[fromIdx];
+        if (!leavePair || (!item.pairId && !item.pairType)) return session;
+      }
+      const [item] = list.splice(fromIdx, 1);
+      if (leavePair) {
+        item.pairId = null;
+        item.pairType = null;
+      }
+      moved = true;
+      return { ...session, exercises: cleanupOrphanPairs(normalizePairContiguity([...list, item])) };
+    }),
+  }));
+  return moved;
+}
+
+/** Rebuild session exercise order from list units (solo cards + pair groups). */
+export function reorderFitnessUnits(sessionId, orderedUnitKeys) {
+  if (!sessionId || !Array.isArray(orderedUnitKeys) || !orderedUnitKeys.length) return false;
+  let moved = false;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      const list = (session.exercises || []).map((ex) => ({ ...ex }));
+      const byId = new Map(list.map((ex) => [ex.id, ex]));
+      const used = new Set();
+      const next = [];
+      for (const key of orderedUnitKeys) {
+        if (key?.type === "pair" && key.pairId) {
+          for (const member of list.filter((ex) => ex.pairId === key.pairId)) {
+            if (used.has(member.id)) continue;
+            next.push(member);
+            used.add(member.id);
+          }
+        } else if (key?.id) {
+          const item = byId.get(key.id);
+          if (!item || used.has(item.id)) continue;
+          next.push(item);
+          used.add(item.id);
+        }
+      }
+      for (const ex of list) {
+        if (used.has(ex.id)) continue;
+        next.push(ex);
+      }
+      const same = next.length === list.length && next.every((ex, i) => ex.id === list[i].id);
+      if (same) return session;
+      moved = true;
+      return { ...session, exercises: cleanupOrphanPairs(normalizePairContiguity(next)) };
+    }),
+  }));
+  return moved;
+}
+
+/** Append an entire pair block after the last exercise (end of list). */
+export function moveFitnessPairBlockToEnd(sessionId, fromPairId) {
+  if (!sessionId || !fromPairId) return false;
+  let moved = false;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      const list = (session.exercises || []).map((ex) => ({ ...ex }));
+      const block = list.filter((ex) => ex.pairId === fromPairId);
+      if (!block.length) return session;
+      const without = list.filter((ex) => ex.pairId !== fromPairId);
+      if (without.length === list.length - block.length && list.slice(-block.length).every((ex, i) => ex.id === block[i]?.id)) {
+        return session;
+      }
+      moved = true;
+      return { ...session, exercises: cleanupOrphanPairs(normalizePairContiguity([...without, ...block])) };
+    }),
+  }));
+  return moved;
+}
+
+export function cloneSessionExercises(sessionId) {
+  const session = (state.fitnessLog || []).find((w) => w.id === sessionId);
+  if (!session) return null;
+  try {
+    return JSON.parse(JSON.stringify(session.exercises || []));
+  } catch {
+    return (session.exercises || []).map((ex) => ({
+      ...ex,
+      sets: (ex.sets || []).map((set) => ({ ...set })),
+    }));
+  }
+}
+
+export function restoreSessionExercises(sessionId, exercises) {
+  if (!sessionId || !Array.isArray(exercises)) return false;
+  let ok = false;
+  patchState((s) => ({
+    ...s,
+    fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) => {
+      ok = true;
+      return {
+        ...session,
+        exercises: cleanupOrphanPairs(normalizePairContiguity(exercises.map((ex) => ({ ...ex })))),
+      };
+    }),
+  }));
+  return ok;
 }
 
 /** Keep paired exercises contiguous in list order. */
@@ -1417,6 +1600,19 @@ function normalizePairContiguity(exercises = []) {
     }
   }
   return result;
+}
+
+function cleanupOrphanPairs(exercises = []) {
+  const counts = {};
+  for (const ex of exercises) {
+    if (!ex.pairId) continue;
+    counts[ex.pairId] = (counts[ex.pairId] || 0) + 1;
+  }
+  return exercises.map((ex) => {
+    if (!ex.pairId) return ex;
+    if ((counts[ex.pairId] || 0) < 2) return { ...ex, pairId: null, pairType: null };
+    return ex;
+  });
 }
 
 export function removeExerciseFromPair(sessionId, exerciseId) {
@@ -1460,19 +1656,76 @@ export function completeWorkout(sessionId) {
     const unit = s.fitnessSettings?.preferredUnit || "lb";
     const session = (s.fitnessLog || []).find((w) => w.id === sessionId);
     if (!session || session.completedAt) return s;
-    const completedAt = new Date().toISOString();
-    const sealed = { ...session, completedAt };
+    let sealed = { ...session, completedAt: new Date().toISOString() };
+    if (sealed.timerStartedAt) {
+      const started = Date.parse(sealed.timerStartedAt);
+      const add = Number.isFinite(started) ? Math.max(0, Date.now() - started) : 0;
+      sealed = {
+        ...sealed,
+        timerStartedAt: null,
+        timerElapsedMs: Math.max(0, Number(sealed.timerElapsedMs) || 0) + add,
+      };
+    }
     const nextLog = (s.fitnessLog || []).map((w) => (w.id === sessionId ? sealed : w));
     payload = buildWorkoutCompletionPayload(sealed, nextLog, {
       ...defaultFitnessSettings(),
       ...s.fitnessSettings,
       preferredUnit: unit,
     });
+    const nextFocus = advanceFocusAfterSession(s.fitnessSettings?.focusExercise, sealed);
     return {
       ...s,
       settings: {
         ...s.settings,
         fitnessTourCompleted: true,
+      },
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        focusExercise: nextFocus,
+      },
+      fitnessLog: nextLog,
+    };
+  });
+  return payload;
+}
+
+/** Seal an active session early. Counts done sets; keeps incomplete sets in history. */
+export function endWorkoutSession(sessionId) {
+  let payload = null;
+  patchState((s) => {
+    const unit = s.fitnessSettings?.preferredUnit || "lb";
+    const session = (s.fitnessLog || []).find((w) => w.id === sessionId);
+    if (!session || session.completedAt) return s;
+    const doneSets = (session.exercises || []).some((ex) => (ex.sets || []).some((set) => set.done));
+    if (!doneSets && !(session.exercises || []).length) return s;
+    let sealed = { ...session, completedAt: new Date().toISOString(), endedEarly: true };
+    if (sealed.timerStartedAt) {
+      const started = Date.parse(sealed.timerStartedAt);
+      const add = Number.isFinite(started) ? Math.max(0, Date.now() - started) : 0;
+      sealed = {
+        ...sealed,
+        timerStartedAt: null,
+        timerElapsedMs: Math.max(0, Number(sealed.timerElapsedMs) || 0) + add,
+      };
+    }
+    const nextLog = (s.fitnessLog || []).map((w) => (w.id === sessionId ? sealed : w));
+    payload = buildWorkoutEndedPayload(sealed, nextLog, {
+      ...defaultFitnessSettings(),
+      ...s.fitnessSettings,
+      preferredUnit: unit,
+    });
+    const nextFocus = advanceFocusAfterSession(s.fitnessSettings?.focusExercise, sealed);
+    return {
+      ...s,
+      settings: {
+        ...s.settings,
+        fitnessTourCompleted: true,
+      },
+      fitnessSettings: {
+        ...defaultFitnessSettings(),
+        ...s.fitnessSettings,
+        focusExercise: nextFocus,
       },
       fitnessLog: nextLog,
     };
@@ -1598,7 +1851,13 @@ export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGrou
   patchState((s) => {
     const unitPref = s.fitnessSettings?.preferredUnit || "lb";
     const group = muscleGroup || catalog?.muscleGroup || "";
-    const hint = suggestedNextLoad(s.fitnessLog, trimmed, unitPref);
+    const hint = suggestedNextLoad(
+      s.fitnessLog,
+      trimmed,
+      unitPref,
+      s.fitnessSettings?.goal,
+      s.fitnessSettings?.focusExercise
+    );
     return {
       ...s,
       fitnessSettings: {
@@ -1607,7 +1866,9 @@ export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGrou
         recentExercises: touchRecentExercise(s.fitnessSettings, trimmed),
       },
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
-        mapExercise(session, exerciseId, () => makeExercise(trimmed, group, unitPref, hint))
+        mapExercise(session, exerciseId, () =>
+          makeExercise(trimmed, group, unitPref, hint, { restSeconds: hint.restSeconds })
+        )
       ),
     };
   });

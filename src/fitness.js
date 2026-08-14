@@ -60,19 +60,21 @@ export function muscleLabel(id) {
 export function defaultFitnessSettings() {
   return {
     preferredUnit: "lb",
-    bodyWeight: 170,
+    bodyWeight: null,
+    bodyWeightEntered: false,
     recentExercises: [],
     favoriteExercises: [],
     equipmentAvailable: EQUIPMENT_OPTIONS.map((e) => e.id),
     blockedExercises: [],
     experienceLevel: "beginner",
-    goal: "build_muscle",
+    goal: null,
     trainWhy: [],
     prefsCaptured: false,
     restSeconds: 90,
     splitType: "ppl",
     gymDaysPerWeek: 4,
     sessionMinutes: 60,
+    focusExercise: null,
   };
 }
 
@@ -106,7 +108,7 @@ export const WHY_YOU_TRAIN = [
   { id: "mental_health", label: "Mental health", line: "Training as emotional architecture. Chemistry first." },
   { id: "structure", label: "Structure & routine", line: "The gym gives the day a spine." },
   { id: "energy", label: "More energy", line: "Train so the rest of the day feels lighter." },
-  { id: "confidence", label: "Confidence", line: "Capability, not vanity. Hard things compound." },
+  { id: "confidence", label: "Confidence", line: "Proof you can finish hard sets when it counts." },
   { id: "community", label: "Community", line: "Quiet camaraderie of shared effort." },
   { id: "habit", label: "Build the habit", line: "Not going feels wrong. Keep the momentum." },
   { id: "performance", label: "Performance", line: "What can this body do, and how does it adapt?" },
@@ -184,6 +186,12 @@ export function sessionSetCount(session) {
   return session.exercises.reduce((total, ex) => {
     return total + (ex.sets || []).filter((s) => s.done).length;
   }, 0);
+}
+
+/** Count of all sets (done + open) in a session. */
+export function sessionTotalSetCount(session) {
+  if (!session?.exercises?.length) return 0;
+  return session.exercises.reduce((total, ex) => total + (ex.sets || []).length, 0);
 }
 
 /** Elapsed minutes from workout timer if used, else startedAt → completedAt. */
@@ -341,6 +349,7 @@ export function buildWorkoutCompletionPayload(session, log = [], settings = {}) 
 
   return {
     type: "fitness",
+    mode: "complete",
     tier,
     sessionId: session?.id || "",
     exerciseName: pr?.exerciseName,
@@ -349,9 +358,39 @@ export function buildWorkoutCompletionPayload(session, log = [], settings = {}) 
     streakCount,
     exerciseCount: (session?.exercises || []).length,
     setCount: sessionSetCount(session),
+    totalSets: sessionTotalSetCount(session),
     totalVolume: sessionVolume(session, unit),
     unit,
     durationMinutes: sessionDurationMinutes(session),
+    muscleGroups: [...new Set((session?.exercises || []).map((ex) => ex.muscleGroup).filter(Boolean))],
+  };
+}
+
+/**
+ * Payload for ending a session early (partial seal).
+ * Stats reflect done sets only; incomplete sets stay in the saved session.
+ */
+export function buildWorkoutEndedPayload(session, log = [], settings = {}) {
+  const unit = settings?.preferredUnit || "lb";
+  const doneSets = sessionSetCount(session);
+  const totalSets = sessionTotalSetCount(session);
+  const pr = doneSets > 0 ? detectSessionPr(session, log || []) : null;
+  return {
+    type: "fitness",
+    mode: "ended",
+    tier: pr ? "pr" : "standard",
+    sessionId: session?.id || "",
+    exerciseName: pr?.exerciseName,
+    previousValue: pr?.previousValue,
+    newValue: pr?.newValue,
+    streakCount: workoutStreak(log || []),
+    exerciseCount: (session?.exercises || []).length,
+    setCount: doneSets,
+    totalSets,
+    totalVolume: sessionVolume(session, unit),
+    unit,
+    durationMinutes: sessionDurationMinutes(session),
+    muscleGroups: [...new Set((session?.exercises || []).map((ex) => ex.muscleGroup).filter(Boolean))],
   };
 }
 
@@ -396,29 +435,33 @@ export function workoutStreak(log = []) {
   return streak;
 }
 
-export function previousPerformance(log = [], exerciseName) {
+export function lastWorkingSet(log = [], exerciseName) {
   const name = String(exerciseName || "").trim().toLowerCase();
   if (!name) return null;
   const sessions = completedSessions(log).sort((a, b) => (b.date > a.date ? 1 : -1));
   for (const session of sessions) {
     for (const ex of session.exercises || []) {
       if (String(ex.name || "").trim().toLowerCase() !== name) continue;
-      const doneSets = (ex.sets || []).filter((s) => s.done);
+      const sets = ex.sets || [];
+      const doneSets = sets.filter((s) => s.done);
       if (!doneSets.length) continue;
-      const best = doneSets.reduce((acc, set) => {
-        const vol = (Number(set.weight) || 0) * (Number(set.reps) || 0);
-        const accVol = (Number(acc.weight) || 0) * (Number(acc.reps) || 0);
-        return vol > accVol ? set : acc;
-      }, doneSets[0]);
+      const last = doneSets[doneSets.length - 1];
+      const allHit = sets.length > 0 && doneSets.length === sets.length;
       return {
-        weight: best.weight,
-        reps: best.reps,
-        unit: best.unit || "lb",
+        weight: Number(last.weight) || 0,
+        reps: Number(last.reps) || 8,
+        unit: last.unit || "lb",
         date: session.date,
+        allHit,
+        restSeconds: Number(last.restSeconds || ex.restSeconds) || null,
       };
     }
   }
   return null;
+}
+
+export function previousPerformance(log = [], exerciseName) {
+  return lastWorkingSet(log, exerciseName);
 }
 
 /** Last N session volumes for an exercise (oldest → newest). */
@@ -513,20 +556,167 @@ export function filterExercises(query = "", muscleGroup = "all", opts = {}) {
   });
 }
 
-export function suggestedNextLoad(log, exerciseName, unit = "lb") {
-  const prev = previousPerformance(log, exerciseName);
+const COMPOUND_NAME_RE = /deadlift|squat|good morning|hip thrust|romanian|press|row|pull-up|chin-up|dip|push-up/i;
+const AXIAL_COMPOUND_RE = /deadlift|squat|good morning|hip thrust|romanian/i;
+
+/** Shared compound heuristic for Focus lifts and plan roles. */
+export function isCompoundLift(exOrName = {}) {
+  const ex = typeof exOrName === "string" ? { name: exOrName } : exOrName || {};
+  const name = String(ex.name || "");
+  const eq = ex.equipment || findExerciseCatalog(name)?.equipment || [];
+  if (ex.role === "compound") return true;
+  if (AXIAL_COMPOUND_RE.test(name)) return true;
+  if (eq.includes("barbell") && /press|row|squat|deadlift/i.test(name)) return true;
+  if (/pull-up|chin-up|dip|push-up/i.test(name)) return true;
+  if (COMPOUND_NAME_RE.test(name) && (eq.includes("barbell") || eq.includes("dumbbell") || !eq.length)) {
+    return /press|row|squat|deadlift|pull-up|chin-up|dip|push-up|hip thrust/i.test(name);
+  }
+  return false;
+}
+
+export function normalizeFocusExercise(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const name = String(raw.name || "").trim();
+  if (!name) return null;
+  const week = Math.min(4, Math.max(1, Number(raw.weekIndex) || 1));
+  return {
+    name,
+    startedAt: String(raw.startedAt || todayKey()),
+    weekIndex: week,
+  };
+}
+
+export function focusWeekHint(weekIndex = 1) {
+  switch (Number(weekIndex) || 1) {
+    case 1:
+      return "Week 1 · establish the load and own every set.";
+    case 2:
+      return "Week 2 · add a plate or reps if last week was clean.";
+    case 3:
+      return "Week 3 · push again if week 2 stuck.";
+    case 4:
+      return "Week 4 · hold or light deload, then the cycle resets.";
+    default:
+      return "";
+  }
+}
+
+/** After a sealed session that logged the focus lift, advance the 4-week cycle. */
+export function advanceFocusAfterSession(focusExercise, session) {
+  const focus = normalizeFocusExercise(focusExercise);
+  if (!focus || !session) return focus;
+  const key = focus.name.toLowerCase();
+  const logged = (session.exercises || []).some((ex) => {
+    if (String(ex.name || "").trim().toLowerCase() !== key) return false;
+    return (ex.sets || []).some((s) => s.done);
+  });
+  if (!logged) return focus;
+  const week = Number(focus.weekIndex) || 1;
+  if (week >= 4) {
+    return { name: focus.name, startedAt: todayKey(), weekIndex: 1 };
+  }
+  return { ...focus, weekIndex: week + 1 };
+}
+
+/**
+ * Pick Focus from a generated plan: keep previous if still present, else first compound.
+ * @returns {null | { name, startedAt, weekIndex }}
+ */
+export function resolveFocusFromPlan(plan = [], previousFocus = null) {
+  const prev = normalizeFocusExercise(previousFocus);
+  const names = (plan || [])
+    .map((ex) => ({
+      name: String(ex?.name || "").trim(),
+      role: ex?.role,
+      equipment: ex?.equipment,
+    }))
+    .filter((ex) => ex.name);
+  if (!names.length) return prev;
+
+  if (prev) {
+    const still = names.some((ex) => ex.name.toLowerCase() === prev.name.toLowerCase());
+    if (still) return prev;
+  }
+
+  const compound =
+    names.find((ex) => ex.role === "compound" || isCompoundLift(ex)) || names[0];
+  if (!compound) return null;
+  return {
+    name: compound.name,
+    startedAt: todayKey(),
+    weekIndex: 1,
+  };
+}
+
+export function suggestedNextLoad(log, exerciseName, unit = "lb", goal = "build_muscle", focusExercise = null) {
+  const prev = lastWorkingSet(log, exerciseName) || previousPerformance(log, exerciseName);
   if (!prev) return { weight: 0, reps: 8 };
   const isBodyweight = Number(prev.weight) === 0;
   const prevReps = Number(prev.reps) || 8;
-  // Alternate bias: +5 lb when loaded, else +1–2 reps for bodyweight / stalled loads
-  if (isBodyweight) {
-    return { weight: 0, reps: prevReps + 1, unit: prev.unit || unit };
+  const prevWeight = Number(prev.weight) || 0;
+  const plate = unit === "kg" ? 2.5 : 5;
+  const rest = Number(prev.restSeconds) || restSecondsForGoal(goal);
+  const focus = normalizeFocusExercise(focusExercise);
+  const isFocus =
+    focus &&
+    String(exerciseName || "").trim().toLowerCase() === String(focus.name).trim().toLowerCase();
+  const week = isFocus ? Number(focus.weekIndex) || 1 : 0;
+
+  // Focus week 1: establish / repeat successful load (no auto-progression).
+  if (isFocus && week === 1) {
+    return { weight: prevWeight, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
   }
-  return {
-    weight: Math.round((Number(prev.weight) || 0) + 5),
-    reps: prevReps,
-    unit: prev.unit || unit,
-  };
+
+  // Focus week 4: hold or light deload (~7.5%), cycle advances separately after seal.
+  if (isFocus && week === 4) {
+    if (isBodyweight) {
+      return {
+        weight: 0,
+        reps: Math.max(1, prevReps - 1),
+        unit: prev.unit || unit,
+        restSeconds: rest,
+      };
+    }
+    const cut = prevWeight * 0.075;
+    const stepped = Math.round((prevWeight - cut) / plate) * plate;
+    return {
+      weight: Math.max(0, stepped),
+      reps: prevReps,
+      unit: prev.unit || unit,
+      restSeconds: rest,
+    };
+  }
+
+  if (goal === "longevity" || goal === "rehab") {
+    return { weight: prevWeight, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
+  }
+
+  if (goal === "lose_weight") {
+    return {
+      weight: prevWeight,
+      reps: prevReps,
+      unit: prev.unit || unit,
+      restSeconds: Math.max(30, rest - 15),
+    };
+  }
+
+  if (goal === "strength") {
+    if (prev.allHit && !isBodyweight) {
+      return { weight: prevWeight + plate, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
+    }
+    if (prev.allHit && isBodyweight) {
+      return { weight: 0, reps: prevReps + 1, unit: prev.unit || unit, restSeconds: rest };
+    }
+    return { weight: prevWeight, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
+  }
+
+  if (isBodyweight) {
+    return { weight: 0, reps: prev.allHit ? prevReps + 1 : prevReps, unit: prev.unit || unit, restSeconds: rest };
+  }
+  if (prev.allHit) {
+    return { weight: prevWeight + plate, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
+  }
+  return { weight: prevWeight, reps: prevReps, unit: prev.unit || unit, restSeconds: rest };
 }
 
 /** Default rest timer length by training outcome (seconds). */
@@ -571,7 +761,9 @@ export function canCompleteWorkout(session) {
     const sets = ex.sets || [];
     if (!sets.length) return { ok: false, reason: `Add sets for ${ex.name}` };
     const done = sets.filter((s) => s.done);
-    if (!done.length) return { ok: false, reason: `Mark at least one set done on ${ex.name}` };
+    if (done.length !== sets.length) {
+      return { ok: false, reason: `Finish every set on ${ex.name}` };
+    }
     for (const set of sets) {
       const reps = Number(set.reps);
       const weight = Number(set.weight);
@@ -653,6 +845,91 @@ export function findExerciseCatalog(name) {
   return exercisesSeed.find((ex) => ex.name.toLowerCase() === q) || null;
 }
 
+const EACH_SIDE_RE = /lunge|curl|single|one-arm|one arm|unilateral|split squat/i;
+
+export function isEachSideExercise(name = "", catalog = null) {
+  const row = catalog || findExerciseCatalog(name);
+  if (row?.laterality === "each") return true;
+  return EACH_SIDE_RE.test(String(name || ""));
+}
+
+export const DYNAMIC_WARMUP = [
+  { id: "leg-swings", name: "Leg swings", seconds: 40 },
+  { id: "worlds-greatest", name: "World's greatest", seconds: 45 },
+  { id: "band-dislocates", name: "Band dislocates", seconds: 40 },
+  { id: "arm-circles", name: "Arm circles", seconds: 30 },
+  { id: "bodyweight-squats", name: "Bodyweight squats", seconds: 40 },
+];
+
+export const STATIC_COOLDOWN = [
+  { id: "hip-flexor", name: "Hip flexor hold", seconds: 45, tags: ["quads", "glutes", "hamstrings"] },
+  { id: "hamstring", name: "Hamstring hold", seconds: 45, tags: ["hamstrings", "quads"] },
+  { id: "chest-opener", name: "Chest opener", seconds: 40, tags: ["chest", "shoulders"] },
+  { id: "lat-stretch", name: "Lat stretch", seconds: 40, tags: ["back", "lats"] },
+  { id: "figure-four", name: "Figure-four hold", seconds: 45, tags: ["glutes", "quads"] },
+];
+
+function sessionMuscleSet(session) {
+  return new Set((session?.exercises || []).map((ex) => normalizeMuscleGroup(ex.muscleGroup)).filter(Boolean));
+}
+
+export function warmupMovesForSession(session) {
+  const groups = sessionMuscleSet(session);
+  const legs = groups.has("quads") || groups.has("hamstrings") || groups.has("glutes") || groups.has("calves");
+  const upper = groups.has("chest") || groups.has("back") || groups.has("shoulders");
+  if (legs && !upper) {
+    return DYNAMIC_WARMUP.filter((m) => m.id !== "band-dislocates").slice(0, 4);
+  }
+  if (upper && !legs) {
+    return DYNAMIC_WARMUP.filter((m) => m.id !== "leg-swings").slice(0, 4);
+  }
+  return DYNAMIC_WARMUP.slice(0, 5);
+}
+
+export function cooldownMovesForSession(session) {
+  const groups = sessionMuscleSet(session);
+  const tagged = STATIC_COOLDOWN.filter((m) => (m.tags || []).some((t) => groups.has(t)));
+  const picks = tagged.length ? tagged : STATIC_COOLDOWN;
+  return picks.slice(0, 4);
+}
+
+export function shouldAutoStartRest(session, exerciseId, setId) {
+  const exercises = session?.exercises || [];
+  const ex = exercises.find((e) => e.id === exerciseId);
+  if (!ex) return false;
+  const sets = ex.sets || [];
+  const set = sets.find((s) => s.id === setId);
+  if (!set?.done) return false;
+  const filled = Number(set.reps) > 0 && Number.isFinite(Number(set.weight)) && Number(set.weight) >= 0;
+  if (!filled) return false;
+  const setIndex = sets.findIndex((s) => s.id === setId);
+  if (setIndex < 0) return false;
+
+  const workLeft = (list) =>
+    list.some((e) => (e.sets || []).some((s) => !s.done));
+
+  if (!ex.pairId) {
+    return workLeft(exercises);
+  }
+
+  const members = exercises.filter((e) => e.pairId === ex.pairId);
+  const roundDone = members.every((m) => {
+    const row = (m.sets || [])[setIndex];
+    if (!row?.done) return false;
+    const reps = Number(row.reps);
+    const weight = Number(row.weight);
+    return Number.isFinite(reps) && reps > 0 && Number.isFinite(weight) && weight >= 0;
+  });
+  if (!roundDone) return false;
+
+  const lastRound = members.every((m) => setIndex >= (m.sets || []).length - 1);
+  if (lastRound) {
+    const others = exercises.filter((e) => e.pairId !== ex.pairId);
+    return workLeft(others);
+  }
+  return true;
+}
+
 export function musclesHitRecently(log = [], withinSessions = 3) {
   const sessions = completedSessions(log).slice(0, withinSessions);
   const hit = new Set();
@@ -664,11 +941,34 @@ export function musclesHitRecently(log = [], withinSessions = 3) {
   return hit;
 }
 
-export function progressiveOverloadHint(log, exerciseName, unit = "lb") {
-  const prev = previousPerformance(log, exerciseName);
+export function progressiveOverloadHint(log, exerciseName, unit = "lb", goal = "build_muscle", focusExercise = null) {
+  const prev = lastWorkingSet(log, exerciseName) || previousPerformance(log, exerciseName);
   if (!prev) return null;
-  const nextWeight = Math.round((Number(prev.weight) || 0) + 5);
-  return `Try ${nextWeight} ${prev.unit || unit} × ${prev.reps}`;
+  const focus = normalizeFocusExercise(focusExercise);
+  const isFocus =
+    focus &&
+    String(exerciseName || "").trim().toLowerCase() === String(focus.name).trim().toLowerCase();
+  const next = suggestedNextLoad(log, exerciseName, unit, goal, focus);
+  if (isFocus) {
+    const weekHint = focusWeekHint(focus.weekIndex);
+    const same =
+      Number(next.weight) === Number(prev.weight) && Number(next.reps) === Number(prev.reps);
+    const loadLine = same
+      ? `Repeat ${next.weight || 0} ${next.unit || unit} × ${next.reps}`
+      : Number(next.weight) === 0
+        ? `Try ${next.reps} reps`
+        : `Try ${next.weight} ${next.unit || unit} × ${next.reps}`;
+    return `${loadLine}. ${weekHint}`;
+  }
+  const same =
+    Number(next.weight) === Number(prev.weight) && Number(next.reps) === Number(prev.reps);
+  if (same) {
+    if (goal === "lose_weight") return `Keep ${next.weight} ${next.unit || unit} × ${next.reps}. Shorter rest.`;
+    if (goal === "longevity" || goal === "rehab") return `Repeat ${next.weight} ${next.unit || unit} × ${next.reps}`;
+    return `Repeat ${next.weight} ${next.unit || unit} × ${next.reps}`;
+  }
+  if (Number(next.weight) === 0) return `Try ${next.reps} reps`;
+  return `Try ${next.weight} ${next.unit || unit} × ${next.reps}`;
 }
 
 export { exercisesSeed };

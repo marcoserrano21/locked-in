@@ -5,6 +5,11 @@ import { escapeHtml, icon } from "./dom.js";
 import { paginate, renderPager } from "./Pagination.js";
 import { renderDateField } from "./DatePicker.js";
 
+function isHoursMode(state) {
+  if (state?.preset === "marco") return false;
+  return state?.settings?.moneyMode !== "miles";
+}
+
 export function renderMiles(state, ui = {}) {
   const miles = totalMiles(state);
   const earn = totalEarnings(state);
@@ -17,6 +22,16 @@ export function renderMiles(state, ui = {}) {
   const overSoft = miles >= soft;
   const overCap = miles > cap;
   const fillClass = overCap ? "danger" : overSoft ? "warn" : "";
+  const hoursMode = isHoursMode(state);
+  const unitShort = hoursMode ? "hr" : "mi";
+  const unitLabel = hoursMode ? "hours" : "miles used";
+  const rateLabel = hoursMode ? `~$${rate}/hr` : `~$${rate}/mi after energy`;
+  const remainLabel = hoursMode
+    ? `${remaining} hours remaining · soft stop at ${soft}`
+    : `${remaining} miles remaining · soft stop at ${soft}`;
+  const overLabel = hoursMode
+    ? `${soft} hours. Stop and reassess with numbers, not vibes.`
+    : `${soft} miles. Stop and reassess with numbers, not vibes.`;
 
   const all = (state.uberLog || []).slice().reverse();
   const { items: pageRows, page, totalPages } = paginate(all, ui.milesPage || 0);
@@ -27,7 +42,7 @@ export function renderMiles(state, ui = {}) {
       <div class="task-row !grid-cols-[1fr_auto]">
         <div>
           <p class="task-title !min-h-0">${formatDisplayDate(e.date)}</p>
-          <div class="task-meta"><span>${escapeHtml(e.miles)} mi</span><span>$${escapeHtml(e.earnings)}</span></div>
+          <div class="task-meta"><span>${escapeHtml(e.miles)} ${unitShort}</span><span>$${escapeHtml(e.earnings)}</span></div>
         </div>
         <div class="flex items-center gap-1">
           <button type="button" class="btn !min-h-11 !min-w-11 !px-0" data-action="edit-uber" data-id="${escapeHtml(e.id)}" aria-label="Edit session">${icon("edit", "h-4 w-4")}</button>
@@ -42,7 +57,6 @@ export function renderMiles(state, ui = {}) {
   const subtitle = isMarco
     ? `Model 3 RWD · FSD Supervised. Bridge income, not identity. ${CHALLENGE_META.uberNightsPerWeek} nights / week · ${CHALLENGE_META.uberWindow}`
     : `${escapeHtml(state.settings?.moneyLabel || "Side income")}. Soft stop then hard ceiling. Numbers, not vibes.`;
-  const unitLabel = isMarco || state.settings?.moneyMode !== "hours" ? "miles used" : "units used";
 
   return `
     <section class="screen">
@@ -56,14 +70,14 @@ export function renderMiles(state, ui = {}) {
 
       <section class="panel grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs" style="color:var(--mute)">${escapeHtml(unitLabel)}</p>
+          <p class="help-text">${escapeHtml(unitLabel)}</p>
           <p class="display text-4xl" style="color:${overCap ? "var(--danger)" : overSoft ? "var(--maintain)" : "var(--text)"}">${miles}</p>
-          <p class="text-xs" style="color:var(--mute)">of ${cap} cap</p>
+          <p class="help-text">of ${cap} cap</p>
         </div>
         <div>
-          <p class="text-xs" style="color:var(--mute)">earned</p>
+          <p class="help-text">$</p>
           <p class="display text-4xl">$${earn}</p>
-          <p class="text-xs" style="color:var(--mute)">~$${rate}/mi after energy</p>
+          <p class="help-text">${escapeHtml(rateLabel)}</p>
         </div>
       </section>
 
@@ -72,8 +86,8 @@ export function renderMiles(state, ui = {}) {
           <div class="day-rail h-2"><div class="day-rail-fill ${fillClass}" style="width:${fill}%"></div></div>
           <div class="pointer-events-none absolute top-0 h-2 w-0.5" style="left:${softPct}%;background:var(--maintain)"></div>
         </div>
-        <p class="mt-2 text-sm" style="color:var(--mute)">${remaining} miles remaining · soft stop at ${soft}</p>
-        ${overSoft ? `<p class="mt-2 text-sm" style="color:var(--maintain)">${soft} miles. Stop and reassess with numbers, not vibes.</p>` : ""}
+        <p class="mt-2 text-sm" style="color:var(--mute)">${escapeHtml(remainLabel)}</p>
+        ${overSoft ? `<p class="mt-2 text-sm" style="color:var(--maintain)">${escapeHtml(overLabel)}</p>` : ""}
       </section>
 
       <section class="panel">
@@ -90,7 +104,7 @@ export function renderMiles(state, ui = {}) {
   `;
 }
 
-export function renderUberEditorModal(ui) {
+export function renderUberEditorModal(ui, state) {
   const draft = ui.editingUber || {
     id: "",
     date: todayKey(),
@@ -98,6 +112,9 @@ export function renderUberEditorModal(ui) {
     earnings: "",
   };
   const isNew = !draft.id;
+  const hoursMode = isHoursMode(state);
+  const qtyLabel = hoursMode ? "Hours" : "Miles";
+  const moneyLabel = hoursMode ? "$" : "Earnings ($)";
   return `
     <div class="modal-backdrop">
       <div class="modal-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Add session" : "Edit session"}" data-stop>
@@ -113,11 +130,11 @@ export function renderUberEditorModal(ui) {
           })}
           <div class="flex gap-2">
             <div class="flex-1">
-              <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-miles">Miles</label>
+              <label class="mb-1 block help-text" for="uber-miles">${escapeHtml(qtyLabel)}</label>
               <input class="input" id="uber-miles" name="miles" type="number" inputmode="decimal" min="0" step="0.1" required value="${escapeHtml(draft.miles ?? "")}" />
             </div>
             <div class="flex-1">
-              <label class="mb-1 block text-xs" style="color:var(--mute)" for="uber-earn">Earnings ($)</label>
+              <label class="mb-1 block help-text" for="uber-earn">${escapeHtml(moneyLabel)}</label>
               <input class="input" id="uber-earn" name="earnings" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(draft.earnings ?? "")}" />
             </div>
           </div>

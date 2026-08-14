@@ -27,7 +27,7 @@ const STATUSES = [
   { id: "skip", label: "Skip" },
 ];
 
-const COACH = {
+const COACH_MARCO = {
   q0: {
     text: "Wednesday assignments slipped. Put the due block on Sunday night in Edit, then protect it in Track.",
     action: "open-edit",
@@ -50,6 +50,35 @@ const COACH = {
   },
   q4: {
     text: "Family call skipped. Put a soft reminder on the calendar day and treat it as a kept promise.",
+    action: "today-mode",
+    actionLabel: "Open Today Track",
+    mode: "track",
+  },
+};
+
+const COACH_GENERIC = {
+  q0: {
+    text: "A core block slipped. Put it back on a build day in Edit, then protect it in Track.",
+    action: "open-edit",
+    actionLabel: "Open Edit",
+  },
+  q1: {
+    text: "A habit drifted. Add a short block on a build day so it does not pile up.",
+    action: "open-edit",
+    actionLabel: "Open Edit",
+  },
+  q2: {
+    text: "Money math is fuzzy. Log the session and respect the soft stop before the hard cap.",
+    action: "open-miles",
+    actionLabel: "Open Money",
+  },
+  q3: {
+    text: "Weekly flow is still open. Clear research / post / send before the week escapes.",
+    action: "open-hustle-flow",
+    actionLabel: "Open Hustle Flow",
+  },
+  q4: {
+    text: "A kept-promise block was skipped. Put it on the calendar day and treat it as core.",
     action: "today-mode",
     actionLabel: "Open Today Track",
     mode: "track",
@@ -112,6 +141,7 @@ export function renderProof(state, ui) {
   const longest = longestStreak(state);
   const split = weekSplit(state);
   const dayNum = state.challenge ? challengeDayNumber(state.challenge) : 0;
+  const lengthDays = state.challenge?.lengthDays || state.settings?.challengeLength || 30;
   const unlocked = isChallengeUnlocked(state.challenge);
   const edits = state.scheduleEdits?.length || 0;
   const answers = state.day30Answers || {};
@@ -122,9 +152,12 @@ export function renderProof(state, ui) {
   const openId = ui.day30Open || null;
   const showCoach = Boolean(ui.day30Coach);
   const summary = summarizeAnswers(answers, questions.length);
-  const earlyNudge = dayNum >= 21 && !unlocked;
+  const nearEnd = dayNum >= Math.ceil(lengthDays * 0.7);
+  const earlyNudge = nearEnd && !unlocked;
   const sectionOpen =
-    ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || dayNum >= 21;
+    ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || nearEnd;
+  const isEarlyProof = dayNum <= 7;
+  const coachNotes = state.preset === "marco" ? COACH_MARCO : COACH_GENERIC;
 
   const log = state.fitnessLog || [];
   const settings = { ...defaultFitnessSettings(), ...(state.fitnessSettings || {}) };
@@ -134,14 +167,6 @@ export function renderProof(state, ui) {
   const weekVol = weekFitnessVolume(log, unit);
   const insights = proofInsights(state, log, weekCount);
   const lastWeek = lastWeekRecap(state, log, unit);
-
-  const cells = [];
-  for (let i = 29; i >= 0; i--) {
-    const c = dayCompletion(state, i);
-    cells.push(
-      `<div class="heat-cell" style="background:${heatShade(c.pct)}" title="${c.date}: ${Math.round(c.pct * 100)}%"></div>`
-    );
-  }
 
   const spark = [];
   for (let i = 13; i >= 0; i--) {
@@ -194,7 +219,7 @@ export function renderProof(state, ui) {
       const id = `q${i}`;
       const status = answers[id]?.status;
       if (status !== "no" && status !== "partial") return "";
-      const coach = COACH[id];
+      const coach = coachNotes[id];
       if (!coach) return "";
       const actionAttr =
         coach.action === "today-mode"
@@ -216,6 +241,14 @@ export function renderProof(state, ui) {
     lastWeek.sealed === 0 &&
     lastWeek.workouts === 0;
   const shareScope = ui.proofShareScope === "month" ? "month" : "week";
+  const heatCount = Math.min(30, Math.max(7, lengthDays));
+  const heatCells = [];
+  for (let i = heatCount - 1; i >= 0; i--) {
+    const c = dayCompletion(state, i);
+    heatCells.push(
+      `<div class="heat-cell" style="background:${heatShade(c.pct)}" title="${c.date}: ${Math.round(c.pct * 100)}%"></div>`
+    );
+  }
 
   return `
     <section class="screen">
@@ -229,14 +262,22 @@ export function renderProof(state, ui) {
         isFirstRun
           ? `<section class="panel mb-3">
         <p class="eyebrow">Fresh start</p>
-        <h2 class="display text-3xl mt-1">Day ${Math.max(1, dayNum)} of 30</h2>
-        <p class="mt-2 text-sm" style="color:var(--mute)">Let's build your first entry. Seal a day or finish a workout. Then Proof fills in.</p>
+        <h2 class="display text-3xl mt-1">Day ${Math.max(1, dayNum)} of ${lengthDays}</h2>
+        <p class="mt-2 text-sm" style="color:var(--mute)">Seal a day or finish a workout. Then Proof fills in.</p>
         <button type="button" class="btn btn-primary mt-4 w-full" data-action="set-tab" data-tab="today">Open Today</button>
       </section>`
           : ""
       }
 
       <div class="proof-bento" aria-label="Proof metrics">
+        ${
+          isEarlyProof
+            ? `
+        <section class="proof-tile proof-tile-span-4">
+          <p class="proof-tile-label">Last ${heatCount} days</p>
+          <div class="mt-3 grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${heatCells.join("")}</div>
+        </section>`
+            : `
         <section class="proof-tile proof-tile-span-4" aria-label="Last week recap">
           <p class="proof-tile-label">${copy.proof?.lastWeekLabel || "Last week"}</p>
           <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(lastWeek.range)}</p>
@@ -254,14 +295,18 @@ export function renderProof(state, ui) {
               <p class="text-xs" style="color:var(--mute)">volume</p>
             </div>
           </div>
-        </section>
+        </section>`
+        }
 
-        <section class="proof-tile proof-tile-span-4 !bg-transparent !shadow-none !p-0" aria-label="Day 30 review">
+        ${
+          isEarlyProof || !nearEnd
+            ? ""
+            : `<section class="proof-tile proof-tile-span-4 !bg-transparent !shadow-none !p-0" aria-label="End review">
           <section class="panel" id="day30-review">
             <button type="button" class="review-head w-full !px-0" data-action="toggle-day30-section" aria-expanded="${sectionOpen}">
               <div class="min-w-0 text-left">
-                <p class="eyebrow mb-0">Day 30 review</p>
-                <p class="mt-1 text-xs" style="color:var(--mute)">answered ${summary.answered}/${questions.length} · ${unlocked ? "unlocked" : `day ${dayNum}/30`}</p>
+                <p class="eyebrow mb-0">Day ${lengthDays} review</p>
+                <p class="mt-1 text-xs" style="color:var(--mute)">answered ${summary.answered}/${questions.length} · ${unlocked ? "unlocked" : `day ${dayNum}/${lengthDays}`}</p>
               </div>
               <span class="chevron-rot ${sectionOpen ? "is-open" : ""}" aria-hidden="true">${icon("down", "h-5 w-5")}</span>
             </button>
@@ -273,7 +318,7 @@ export function renderProof(state, ui) {
             ${
               earlyNudge
                 ? `<div class="banner banner-warn mb-3" role="status">
-                  Day ${dayNum}/30. Start the review now. Early answers beat a Day 30 surprise.
+                  Day ${dayNum}/${lengthDays}. Start the review now. Early answers beat a last-day surprise.
                 </div>`
                 : ""
             }
@@ -303,10 +348,11 @@ export function renderProof(state, ui) {
             </div>
             </div>
           </section>
-        </section>
+        </section>`
+        }
 
         ${
-          isFirstRun
+          isEarlyProof
             ? ""
             : `
         <section class="proof-tile proof-tile-span-2">
@@ -336,8 +382,8 @@ export function renderProof(state, ui) {
         </section>
 
         <section class="proof-tile proof-tile-span-4">
-          <p class="proof-tile-label">Last 30 days</p>
-          <div class="mt-3 grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${cells.join("")}</div>
+          <p class="proof-tile-label">Last ${heatCount} days</p>
+          <div class="mt-3 grid grid-cols-10 justify-items-center gap-1.5" aria-hidden="true">${heatCells.join("")}</div>
         </section>
 
         <section class="proof-tile proof-tile-span-2">
@@ -355,11 +401,15 @@ export function renderProof(state, ui) {
 
         <section class="proof-tile proof-tile-span-4">
           <p class="proof-tile-label mb-3">Share proof</p>
-          <div class="segment mb-3" role="tablist" aria-label="Share range">
+          ${
+            isEarlyProof
+              ? `<button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="week">Share</button>`
+              : `<div class="segment mb-3" role="tablist" aria-label="Share range">
             <button type="button" class="segment-btn ${shareScope === "week" ? "is-active accent" : ""}" data-action="proof-share-scope" data-scope="week" role="tab" aria-selected="${shareScope === "week"}" tabindex="${shareScope === "week" ? "0" : "-1"}">This week</button>
-            <button type="button" class="segment-btn ${shareScope === "month" ? "is-active accent" : ""}" data-action="proof-share-scope" data-scope="month" role="tab" aria-selected="${shareScope === "month"}" tabindex="${shareScope === "month" ? "0" : "-1"}">Last 30 days</button>
+            <button type="button" class="segment-btn ${shareScope === "month" ? "is-active accent" : ""}" data-action="proof-share-scope" data-scope="month" role="tab" aria-selected="${shareScope === "month"}" tabindex="${shareScope === "month" ? "0" : "-1"}">Last ${heatCount} days</button>
           </div>
-          <button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="${shareScope === "month" ? "month" : "week"}">Share</button>
+          <button type="button" class="btn btn-primary w-full !min-h-11" data-action="share-progress" data-scope="${shareScope === "month" ? "month" : "week"}">Share</button>`
+          }
         </section>
       </div>
     </section>

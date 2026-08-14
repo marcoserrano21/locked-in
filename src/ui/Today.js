@@ -14,6 +14,7 @@ import { challengeDayNumber } from "../challenge.js";
 import { computeStreak, completionForDate, isDone } from "../streaks.js";
 import { describeOverride, resolveBlocksForDate } from "../work.js";
 import { escapeHtml, icon, tagChips } from "./dom.js";
+import { tagsToFormValue } from "../tags.js";
 import { formatTimeShort } from "./plan/ScheduleTimeline.js";
 import { renderPlan } from "./Plan.js";
 import { renderFlash, renderInstallTip } from "./Install.js";
@@ -67,15 +68,17 @@ function isAtRisk(blocks, doneLookup, completion, isToday) {
 
 function editToggleBtn(todayMode) {
   if (todayMode === "edit") {
-    return `<button type="button" class="icon-btn shrink-0" data-action="today-mode" data-mode="track" aria-label="Back to Track">${icon("check", "h-5 w-5")}</button>`;
+    return `<button type="button" class="btn shrink-0 !min-h-10 !px-3 !text-xs" data-action="today-mode" data-mode="track">Track</button>`;
   }
   return `<button type="button" class="icon-btn shrink-0" data-action="today-mode" data-mode="edit" aria-label="Edit schedule">${icon("edit", "h-5 w-5")}</button>`;
 }
 
+const STATUS_DUPLICATE_HINTS = new Set(["empty-wizard", "streak-risk"]);
+
 function renderCoachStrip(state, focusBlock) {
   const playbook = mergePlaybook(state.settings?.hustlePlaybook) || playbookSeed;
   const hints = coachHints(state, { playbook, focusBlock });
-  const h = hints[0];
+  const h = hints.find((hint) => !STATUS_DUPLICATE_HINTS.has(hint.id));
   if (!h) return "";
   const actionAttr =
     h.action === "set-tab"
@@ -238,8 +241,9 @@ function renderHybridBlockList(state, blocks, selectedDate, canEdit, focusId) {
       const done = isDone(state, selectedDate, b.id);
       const isFocus = focusId && b.id === focusId;
       const chips = tagChips(b.tags, b.soft);
+      const tagPreview = tagsToFormValue(b.tags || []);
       return `
-        <button type="button" class="hybrid-row ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-action="toggle-block" data-id="${escapeHtml(b.id)}" data-date="${selectedDate}" data-block-id="${escapeHtml(b.id)}" data-preview-label="${escapeHtml(b.label || "")}" data-preview-time="${escapeHtml(formatTimeShort(b.time))}" data-preview-tags="${escapeHtml((b.tags || []).join(", "))}" data-preview-soft="${b.soft ? "1" : "0"}" data-preview-details="${escapeHtml(b.details || "")}" ${canEdit ? "" : "disabled"} aria-pressed="${done}">
+        <button type="button" class="hybrid-row ${done ? "is-done" : ""} ${isFocus ? "is-focus" : ""}" data-action="toggle-block" data-id="${escapeHtml(b.id)}" data-date="${selectedDate}" data-block-id="${escapeHtml(b.id)}" data-preview-label="${escapeHtml(b.label || "")}" data-preview-time="${escapeHtml(formatTimeShort(b.time))}" data-preview-tags="${escapeHtml(tagPreview)}" data-preview-soft="${b.soft ? "1" : "0"}" data-preview-details="${escapeHtml(b.details || "")}" ${canEdit ? "" : "disabled"} aria-pressed="${done}">
           <span class="hybrid-rail" aria-hidden="true">
             <span class="hybrid-time">${escapeHtml(formatTimeShort(b.time))}</span>
             <span class="hybrid-dot"></span>
@@ -266,7 +270,7 @@ function renderDayPanel(state, ui, ctx) {
       const sealed = c.complete;
       const isRealToday = key === realToday;
       return `
-        <button type="button" class="pill-day snap-start shrink-0 ${dayType(dow, state)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""} ${isRealToday ? "is-today" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}${isRealToday ? ", today" : ""}" aria-pressed="${active}">
+        <button type="button" class="pill-day ${dayType(dow, state)} ${active ? "is-active" : ""} ${sealed ? "is-done" : ""} ${isRealToday ? "is-today" : ""}" data-action="select-date" data-date="${key}" data-day="${dow}" aria-label="${DAY_NAMES[dow]} ${formatDisplayDate(key)}${sealed ? ", sealed" : ""}${isRealToday ? ", today" : ""}" aria-pressed="${active}">
           <span class="block text-[10px] font-semibold">${DAY_NAMES[dow]}</span>
           <span class="block text-[11px]">${formatDisplayDate(key).slice(0, 5)}</span>
           ${isRealToday ? '<span class="pill-today-dot" aria-hidden="true"></span>' : ""}
@@ -304,7 +308,7 @@ function renderDayPanel(state, ui, ctx) {
           label: "Day",
         })}
       </div>
-      <div class="mb-3 scroll-touch flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory" role="group" aria-label="This week">${pills}</div>
+      <div class="mb-3 day-pill-grid" role="group" aria-label="This week">${pills}</div>
       <p class="eyebrow mb-2">Today's blocks</p>
       ${listHtml}
       ${ctx.isToday && completion.complete ? renderTomorrowFooter(state, selectedDate) : ""}
@@ -363,8 +367,8 @@ export function patchTodayTrack(root, state, ui, opts = {}) {
   if (backup && backupHtml) backup.outerHTML = backupHtml;
   else if (backup && !backupHtml) backup.remove();
   else if (!backup && backupHtml) {
-    const statsEl = screen.querySelector('[data-region="stats-rail"]');
-    if (statsEl) statsEl.insertAdjacentHTML("afterend", backupHtml);
+    const dayPanel = screen.querySelector('[data-region="day-panel"]');
+    if (dayPanel) dayPanel.insertAdjacentHTML("afterend", backupHtml);
   }
 
   const coach = screen.querySelector('[data-region="coach-banners"]');
@@ -449,11 +453,11 @@ export function renderToday(state, ui, opts = {}) {
       ${renderStatsRail(state, ctx.selectedDate)}
       ${renderFlash(ui.flash)}
       ${showCoachStrip || ""}
-      ${renderBackupBanner(state)}
 
       ${renderStatusBanner(state, ui, ctx)}
       ${renderDayPanel(state, ui, ctx)}
 
+      ${renderBackupBanner(state)}
       ${renderInstallTip(state, { canInstall: Boolean(opts.canInstall) })}
     </section>
   `;

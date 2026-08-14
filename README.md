@@ -95,5 +95,7 @@ See [`docs/BETA_MARKETING.md`](docs/BETA_MARKETING.md) for positioning, channels
 - `docs/SCHEDULE.md` — human schedule source
 - `docs/VOICE.md` — in-app copy rules
 - `docs/BETA_MARKETING.md` — guest beta + digital marketing strategy
+- `docs/2026-package/` — August 2026 personas, pitch, competitive, UX review
+- `docs/flows/` — as-built + recommended user journeys per screen
 - `design-system/MASTER.md` — UI tokens
 - `content/schedule.seed.json` — machine seed
