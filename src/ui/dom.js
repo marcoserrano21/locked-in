@@ -25,6 +25,7 @@ export function icon(name, className = "h-5 w-5") {
     theme: `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
     spark: `<svg ${common} viewBox="0 0 24 24"><path d="M12 2l1.2 6.3L19 12l-5.8 3.7L12 22l-1.2-6.3L5 12l5.8-3.7z"/></svg>`,
     refresh: `<svg ${common} viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>`,
+    undo: `<svg ${common} viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 1 1 0 11H13"/></svg>`,
     left: `<svg ${common} viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>`,
     right: `<svg ${common} viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`,
     profile: `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 19a7 7 0 0 1 14 0"/></svg>`,
@@ -32,6 +33,7 @@ export function icon(name, className = "h-5 w-5") {
     more: `<svg ${common} viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>`,
     grip: `<svg ${common} viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>`,
     star: `<svg ${common} viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17.8 6.7 19.6l1-5.8L3.5 9.7l5.9-.9L12 3.5z"/></svg>`,
+    info: `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></svg>`,
   };
   return icons[name] || "";
 }

@@ -53,6 +53,13 @@ export function renderInstallTip(state, opts = {}) {
 
 export function renderToast(toast) {
   if (!toast?.message) return "";
+  if (toast.action === "fitness-undo") {
+    return `
+    <div class="app-toast app-toast-with-action" role="status" aria-live="polite">
+      <span>${escapeHtml(toast.message)}</span>
+      <button type="button" class="app-toast-action" data-action="fitness-undo">Undo</button>
+    </div>`;
+  }
   return `
     <div class="app-toast" role="status" aria-live="polite">${escapeHtml(toast.message)}</div>
   `;

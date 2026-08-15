@@ -2,6 +2,8 @@
 
 Living backlog. Local-only PWA: export is the account. Barlow / Instrument Serif / build-green stay.
 
+August 2026 recommended approach, personas, competitive, and screen scores: [`docs/2026-package/00-index.md`](2026-package/00-index.md).
+
 ## North star metrics
 
 | Metric | Why |

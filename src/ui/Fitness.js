@@ -8,6 +8,8 @@ import {
   trainWhyLine,
   filterExercises,
   findExerciseCatalog,
+  isEachSideExercise,
+  warmupMovesForSession,
   formatVolume,
   muscleLabel,
   previousPerformance,
@@ -22,6 +24,7 @@ import {
   sparklinePath,
   liveSessionElapsedMs,
   formatSessionClock,
+  normalizeFocusExercise,
 } from "../fitness.js";
 import { isBodyweightExercise } from "../fitness-plan.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
@@ -60,30 +63,49 @@ function sortFitnessSessions(sessions, sort = "recent") {
   });
 }
 
+function setFieldValue(set, field) {
+  const n = set?.[field];
+  if (n == null || n === "") return "";
+  return String(n);
+}
+
 function renderSetRow(set, exercise, sessionId, unit, { bodyweight = false } = {}) {
   const restSec = Number(exercise?.restSeconds) || Number(set?.restSeconds) || 90;
   const loadFields = bodyweight
     ? `<span class="text-xs shrink-0 font-semibold" style="color:var(--mute)">BW</span>
       <span class="text-xs shrink-0" style="color:var(--mute)">×</span>`
-    : `<input class="input !min-h-11 !w-16 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.weight) || ""}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
+    : `<input class="input !min-h-11 !w-16 shrink-0 text-center" type="text" inputmode="decimal" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "weight"))}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
       <span class="text-xs shrink-0" style="color:var(--mute)">${escapeHtml(set.unit || unit)}</span>
       <span class="text-xs shrink-0" style="color:var(--mute)">×</span>`;
   return `
-    <div class="fitness-set-row flex items-center gap-2">
+    <div class="fitness-set-row flex items-center gap-2 ${set.done ? "is-done" : ""}">
       <button type="button" class="check shrink-0 ${set.done ? "is-done" : ""}" data-action="toggle-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Mark set done">
         ${set.done ? icon("check", "h-4 w-4") : ""}
       </button>
       ${loadFields}
-      <input class="input !min-h-11 !w-14 shrink-0 text-center" type="number" min="0" step="1" inputmode="numeric" value="${Number(set.reps) || ""}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />
-      <button type="button" class="icon-btn shrink-0" data-action="start-rest-timer" data-seconds="${restSec}" aria-label="Start ${restSec}s rest">${icon("refresh", "h-4 w-4")}</button>
-      <button type="button" class="icon-btn shrink-0" data-action="delete-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Delete set">${icon("trash", "h-4 w-4")}</button>
+      <input class="input !min-h-11 !w-14 shrink-0 text-center" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "reps"))}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />
+      <span class="fitness-set-row-actions ml-auto flex items-center gap-1 shrink-0">
+        <button type="button" class="icon-btn shrink-0" data-action="start-rest-timer" data-seconds="${restSec}" aria-label="Start ${restSec}s rest">${icon("refresh", "h-4 w-4")}</button>
+        <button type="button" class="icon-btn shrink-0" data-action="delete-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Delete set">${icon("trash", "h-4 w-4")}</button>
+      </span>
     </div>
   `;
 }
 
 function renderRestTimerBar(ui) {
   const timer = ui.restTimer;
-  if (!timer?.endsAt) return "";
+  if (!timer) return "";
+  if (timer.phase === "done") {
+    return `
+    <div class="rest-timer-bar is-done" role="status" aria-live="assertive">
+      <div>
+        <p class="rest-timer-done-title">Rest done. Next set.</p>
+        <p class="text-xs" style="color:var(--text-soft)">Clock's back. Hit the next round.</p>
+      </div>
+      <button type="button" class="btn !min-h-10 !px-3 !text-xs" data-action="clear-rest-timer">Got it</button>
+    </div>`;
+  }
+  if (!timer.endsAt) return "";
   const left = Math.max(0, Math.ceil((timer.endsAt - Date.now()) / 1000));
   const mm = String(Math.floor(left / 60)).padStart(1, "0");
   const ss = String(left % 60).padStart(2, "0");
@@ -112,11 +134,16 @@ function pairGroupLabel(pairType, pairId) {
 }
 
 function isExerciseOpen(ui, exerciseId, fallbackId = null) {
-  const mode = ui.fitnessOpenMode || "one";
+  const mode = ui.fitnessOpenMode || "multi";
   if (mode === "all") return true;
   if (mode === "none") return false;
-  const openId = ui.fitnessOpenExerciseId == null ? fallbackId : ui.fitnessOpenExerciseId;
-  return Boolean(openId && openId === exerciseId);
+  if (Array.isArray(ui.fitnessOpenIds)) return ui.fitnessOpenIds.includes(exerciseId);
+  if (ui.fitnessOpenIds == null && fallbackId) return exerciseId === fallbackId;
+  return false;
+}
+
+function isPairCollapsed(ui, pairId) {
+  return (ui.fitnessCollapsedPairIds || []).includes(pairId);
 }
 
 function renderSessionTimerBar(session) {
@@ -129,7 +156,7 @@ function renderSessionTimerBar(session) {
         <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Session</p>
         <p class="session-timer-count" data-session-clock>${escapeHtml(label)}</p>
       </div>
-      <button type="button" class="btn ${running ? "" : "btn-primary"} !min-h-10 !px-4 !text-xs" data-action="toggle-session-timer" data-session="${escapeHtml(session.id)}">
+      <button type="button" class="btn ${running ? "" : "btn-primary"} !min-h-11 !px-4 !text-xs" data-action="toggle-session-timer" data-session="${escapeHtml(session.id)}">
         ${running ? "Pause" : "Start"}
       </button>
     </div>`;
@@ -157,7 +184,7 @@ function groupSessionExercises(exercises = []) {
   return groups;
 }
 
-function renderExerciseCard(exercise, session, settings, log, { open = false, hidePairBadge = false } = {}) {
+function renderExerciseCard(exercise, session, settings, log, { open = false, hidePairBadge = false, showGrip = false } = {}) {
   const unit = settings.preferredUnit || "lb";
   const catalog = findExerciseCatalog(exercise.name) || {};
   const bodyweight = isBodyweightExercise({
@@ -170,7 +197,13 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
       ? `Last: ${prev.reps} reps`
       : `Last: ${prev.weight} ${prev.unit} × ${prev.reps}`
     : "No history yet. Set the baseline.";
-  const overload = bodyweight ? "" : progressiveOverloadHint(log, exercise.name, unit);
+  const goal = settings.goal || "build_muscle";
+  const focus = normalizeFocusExercise(settings.focusExercise);
+  const isFocus =
+    focus &&
+    String(exercise.name || "").trim().toLowerCase() === String(focus.name).trim().toLowerCase();
+  const overload = progressiveOverloadHint(log, exercise.name, unit, goal, focus);
+  const eachSide = isEachSideExercise(exercise.name, catalog);
   const sets = exercise.sets || [];
   const doneSets = sets.filter((s) => s.done).length;
   const totalSets = sets.length;
@@ -178,18 +211,20 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
     !hidePairBadge && exercise.pairId
       ? pairGroupLabel(exercise.pairType, exercise.pairId)
       : "";
+  const setLine = eachSide ? `Each side · ${totalSets} sets` : `${doneSets}/${totalSets} sets`;
 
   return `
     <article class="panel fitness-exercise-card ${open ? "is-open" : "is-collapsed"}" data-exercise-card data-exercise-id="${escapeHtml(exercise.id)}" data-session-id="${escapeHtml(session.id)}" data-exercise-name="${escapeHtml(exercise.name)}" data-pair-id="${escapeHtml(exercise.pairId || "")}" data-pair-type="${escapeHtml(exercise.pairType || "")}">
       <div class="flex items-start gap-2">
-        <button type="button" class="icon-btn fitness-drag-handle shrink-0 !min-h-11 !min-w-11" draggable="true" data-action="fitness-drag-handle" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" aria-label="Drag to reorder ${escapeHtml(exercise.name)}">${icon("grip", "h-4 w-4")}</button>
+        ${showGrip ? `<button type="button" class="fitness-drag-handle fitness-pair-drag icon-btn shrink-0" data-long-press-drag-handle aria-label="Drag to reorder ${escapeHtml(exercise.name)}">${icon("grip", "h-4 w-4")}</button>` : ""}
         <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" data-action="toggle-fitness-exercise" data-exercise="${escapeHtml(exercise.id)}" aria-expanded="${open}">
           ${renderMuscleThumb(exercise.muscleGroup, "lg")}
           <span class="min-w-0 flex-1">
             ${pairLabel ? `<p class="text-xs font-semibold mb-1" style="color:var(--build)">${escapeHtml(pairLabel)}</p>` : ""}
+            ${isFocus ? `<p class="text-xs font-semibold mb-1" style="color:var(--build)">Focus · Week ${focus.weekIndex}</p>` : ""}
             <h3 class="task-title !min-h-0">${escapeHtml(exercise.name)}</h3>
-            <p class="mt-1 text-xs" style="color:var(--mute)">${escapeHtml(muscleLabel(exercise.muscleGroup))}${bodyweight ? " · Bodyweight" : ""}</p>
-            <p class="mt-1 text-xs font-semibold" style="color:var(--text-soft)">${doneSets}/${totalSets} sets</p>
+            <p class="mt-1 help-text">${escapeHtml(muscleLabel(exercise.muscleGroup))}${bodyweight ? " · Bodyweight" : ""}${eachSide ? " · Each side" : ""}</p>
+            <p class="mt-1 text-xs font-semibold" style="color:var(--text-soft)">${escapeHtml(setLine)}</p>
           </span>
         </button>
         <button type="button" class="icon-btn shrink-0" data-action="open-exercise-menu" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}" data-name="${escapeHtml(exercise.name)}" data-pair-id="${escapeHtml(exercise.pairId || "")}" data-pair-type="${escapeHtml(exercise.pairType || "")}" aria-label="Exercise menu">${icon("more", "h-4 w-4")}</button>
@@ -197,7 +232,7 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
       <div class="fitness-exercise-body ${open ? "is-open" : ""}">
         <div class="fitness-exercise-body-inner">
           <div class="mt-3 space-y-2">
-            <p class="text-xs" style="color:var(--mute)">${escapeHtml(prevLine)}</p>
+            <p class="help-text">${escapeHtml(prevLine)}</p>
             ${overload ? `<p class="text-xs" style="color:var(--build)">${escapeHtml(overload)}</p>` : ""}
             ${sets.map((set) => renderSetRow(set, exercise, session.id, unit, { bodyweight })).join("")}
             <button type="button" class="btn mt-1 w-full !min-h-11 !text-xs" data-action="add-fitness-set" data-session="${escapeHtml(session.id)}" data-exercise="${escapeHtml(exercise.id)}">
@@ -213,19 +248,24 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
 function renderPairGroup(group, session, settings, log, ui, fallbackId) {
   const label = pairGroupLabel(group.pairType, group.pairId);
   const kindClass = group.kind === "circuit" ? "is-circuit" : "is-superset";
+  const collapsed = isPairCollapsed(ui, group.pairId);
   return `
-    <section class="fitness-pair-group ${kindClass}" data-pair-group data-pair-id="${escapeHtml(group.pairId)}" data-pair-type="${escapeHtml(group.pairType)}" data-session="${escapeHtml(session.id)}">
+    <section class="fitness-pair-group ${kindClass} ${collapsed ? "is-collapsed" : ""}" data-pair-group data-pair-id="${escapeHtml(group.pairId)}" data-pair-type="${escapeHtml(group.pairType)}" data-session="${escapeHtml(session.id)}">
       <div class="fitness-pair-head">
-        <div class="min-w-0">
+        <button type="button" class="fitness-pair-drag icon-btn shrink-0" data-long-press-drag-pair aria-label="Drag to reorder ${escapeHtml(label)}">${icon("grip", "h-4 w-4")}</button>
+        <button type="button" class="min-w-0 flex-1 text-left" data-action="toggle-fitness-pair" data-pair-id="${escapeHtml(group.pairId)}" aria-expanded="${!collapsed}">
           <p class="fitness-pair-label">${escapeHtml(label)}</p>
-          <p class="text-[11px]" style="color:var(--mute)">${group.exercises.length} moves · drop exercises here to join</p>
-        </div>
+        </button>
         <div class="flex items-center gap-1 shrink-0">
+          <button type="button" class="icon-btn" data-action="toggle-fitness-pair" data-pair-id="${escapeHtml(group.pairId)}" aria-label="${collapsed ? "Expand" : "Collapse"} ${escapeHtml(label)}">${icon(collapsed ? "down" : "up", "h-4 w-4")}</button>
           <button type="button" class="btn !min-h-9 !px-3 !text-xs" data-action="open-add-exercise" data-session="${escapeHtml(session.id)}" data-pair-id="${escapeHtml(group.pairId)}" data-pair-type="${escapeHtml(group.pairType)}">${icon("plus", "h-3.5 w-3.5")} Add</button>
           <button type="button" class="btn !min-h-9 !px-3 !text-xs" data-action="dissolve-fitness-pair" data-session="${escapeHtml(session.id)}" data-pair-id="${escapeHtml(group.pairId)}">Ungroup</button>
         </div>
       </div>
-      <div class="fitness-pair-members">
+      ${
+        collapsed
+          ? ""
+          : `<div class="fitness-pair-members">
         ${group.exercises
           .map((ex) =>
             renderExerciseCard(ex, session, settings, log, {
@@ -234,6 +274,49 @@ function renderPairGroup(group, session, settings, log, ui, fallbackId) {
             })
           )
           .join("")}
+      </div>`
+      }
+    </section>
+  `;
+}
+
+function renderWarmupStrip(session, ui) {
+  const moves = warmupMovesForSession(session);
+  const checked = new Set(ui.fitnessWarmupChecked || []);
+  const doneCount = moves.filter((m) => checked.has(m.id)).length;
+  const collapsed = Boolean(ui.fitnessWarmupCollapsed);
+  return `
+    <section class="stretch-strip ${collapsed ? "is-collapsed" : ""}" aria-label="Warm-up">
+      <div class="flex items-start justify-between gap-2">
+        <button type="button" class="min-w-0 flex-1 text-left" data-action="toggle-warmup-collapse" aria-expanded="${!collapsed}">
+          <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--mute)">Warm-up</p>
+          <p class="help-text mt-0.5">${
+            collapsed
+              ? `${doneCount}/${moves.length} checked · tap to expand`
+              : "5 to 8 minutes. Dynamic. Does not block Start."
+          }</p>
+        </button>
+        <button type="button" class="icon-btn shrink-0" data-action="toggle-warmup-collapse" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Expand warm-up" : "Collapse warm-up"}">${icon(collapsed ? "down" : "up", "h-4 w-4")}</button>
+      </div>
+      <div class="fitness-exercise-body ${collapsed ? "" : "is-open"}">
+        <div class="fitness-exercise-body-inner">
+          <ul class="stretch-list mt-2">
+            ${moves
+              .map(
+                (m) => `
+              <li>
+                <button type="button" class="stretch-check ${checked.has(m.id) ? "is-done" : ""}" data-action="toggle-warmup-move" data-id="${escapeHtml(m.id)}">
+                  <span class="check shrink-0 ${checked.has(m.id) ? "is-done" : ""}">${checked.has(m.id) ? icon("check", "h-3.5 w-3.5") : ""}</span>
+                  <span class="min-w-0 text-left">
+                    <span class="stretch-name">${escapeHtml(m.name)}</span>
+                    <span class="stretch-meta">${m.seconds}s</span>
+                  </span>
+                </button>
+              </li>`
+              )
+              .join("")}
+          </ul>
+        </div>
       </div>
     </section>
   `;
@@ -255,6 +338,7 @@ function renderTodayPanel(state, ui) {
         <h2 class="display text-4xl">Ready to train?</h2>
         <p class="mt-2 text-sm" style="color:var(--mute)">Build a session from your level, gear, and goals.</p>
         ${whyLine ? `<p class="mt-2 text-xs" style="color:var(--build)">${escapeHtml(whyLine)}</p>` : ""}
+        ${renderWarmupStrip(null, ui)}
         <button type="button" class="btn btn-primary mt-5 w-full" data-action="open-workout-builder">
           Build workout
         </button>
@@ -273,6 +357,7 @@ function renderTodayPanel(state, ui) {
   const focusGroups = [...new Set(exercises.map((ex) => muscleLabel(ex.muscleGroup)).filter(Boolean))].slice(0, 3);
   const focusText = focusGroups.length ? focusGroups.join("/") : "Custom";
   const sessionMenuOpen = ui.fitnessSessionMenuOpen;
+  const focusLift = normalizeFocusExercise(settings.focusExercise);
 
   return `
     <div class="fitness-today-stack">
@@ -296,8 +381,14 @@ function renderTodayPanel(state, ui) {
           }
         </div>
       </div>
+      ${renderWarmupStrip(session, ui)}
       ${renderSessionTimerBar(session)}
       ${renderRestTimerBar(ui)}
+      ${
+        focusLift
+          ? `<p class="text-[11px] font-semibold" style="color:var(--build)">Focus · Week ${focusLift.weekIndex} · ${escapeHtml(focusLift.name)}</p>`
+          : ""
+      }
       <p class="text-[11px]" style="color:var(--mute)">Start the clock when you begin. Log every set. Rest between moves. Complete when done.</p>
       ${
         ui.fitnessRestPresetsOpen
@@ -313,9 +404,9 @@ function renderTodayPanel(state, ui) {
       }
       ${
         exercises.length
-          ? `<div class="flex gap-1">
-        <button type="button" class="btn flex-1 !min-h-9 !text-xs" data-action="fitness-expand-all">Expand all</button>
-        <button type="button" class="btn flex-1 !min-h-9 !text-xs" data-action="fitness-collapse-all">Collapse all</button>
+          ? `<div class="flex justify-end gap-3">
+        <button type="button" class="session-text-link" data-action="fitness-expand-all">Expand all</button>
+        <button type="button" class="session-text-link" data-action="fitness-collapse-all">Collapse all</button>
       </div>`
           : ""
       }
@@ -329,6 +420,7 @@ function renderTodayPanel(state, ui) {
               group.kind === "solo"
                 ? renderExerciseCard(group.exercises[0], session, settings, log, {
                     open: isExerciseOpen(ui, group.exercises[0].id, fallbackId),
+                    showGrip: true,
                   })
                 : renderPairGroup(group, session, settings, log, ui, fallbackId)
             )
@@ -343,11 +435,16 @@ function renderTodayPanel(state, ui) {
       </button>
       ${
         exercises.length
-          ? `<button type="button" class="btn btn-primary w-full !min-h-11" data-action="complete-workout" data-session="${escapeHtml(session.id)}" ${gate.ok ? "" : "disabled"} title="${escapeHtml(gate.reason || "")}">Complete</button>`
+          ? `<button type="button" class="btn btn-primary w-full !min-h-12 !text-sm font-semibold" data-action="complete-workout" data-complete-gate data-session="${escapeHtml(session.id)}" ${gate.ok ? "" : "disabled"} title="${escapeHtml(gate.reason || "")}">Complete</button>`
           : `<button type="button" class="btn btn-primary w-full !min-h-11" disabled>Complete</button>`
       }
     </div>
-    ${exercises.length && !gate.ok ? `<p class="text-xs text-center" style="color:var(--mute)">${escapeHtml(gate.reason || "Fill weight and reps on every set")}</p>` : ""}
+    ${
+      exercises.length
+        ? `<button type="button" class="session-text-link session-end-link" data-action="end-workout-session" data-session="${escapeHtml(session.id)}">End session</button>`
+        : ""
+    }
+    ${exercises.length && !gate.ok ? `<p class="help-text text-center" data-complete-help>${escapeHtml(gate.reason || "Fill weight and reps on every set")}</p>` : ""}
     </div>
   `;
 }
@@ -500,7 +597,7 @@ export function renderFitness(state, ui) {
     tab === "history"
       ? `<div role="tabpanel" id="fitness-panel-history" aria-labelledby="fitness-tab-history">${renderHistoryPanel(state, settings, ui)}</div>`
       : `<div role="tabpanel" id="fitness-panel-today" aria-labelledby="fitness-tab-today">${renderTodayPanel(state, ui)}</div>`;
-  const menu = renderExerciseMenu(ui.openExerciseMenu);
+  const menu = renderExerciseMenu(ui.openExerciseMenu, state.fitnessSettings);
 
   return `
     <section class="fitness-screen space-y-3">
@@ -536,6 +633,56 @@ export function patchFitnessExpandState(root, state, ui) {
   return true;
 }
 
+/** Update Complete gate after a set-field commit without remounting inputs. */
+export function patchFitnessSetCommit(root, state) {
+  const date = todayKey();
+  const session = activeSessionForDate(state.fitnessLog || [], date);
+  if (!session) return false;
+  const gate = canCompleteWorkout(session);
+  const btn = root.querySelector("[data-complete-gate]");
+  if (btn) {
+    btn.disabled = !gate.ok;
+    btn.title = gate.reason || "";
+  }
+  let help = root.querySelector("[data-complete-help]");
+  const actions = root.querySelector(".fitness-session-actions");
+  if (!gate.ok) {
+    const reason = gate.reason || "Fill weight and reps on every set";
+    if (help) help.textContent = reason;
+    else if (actions) {
+      help = document.createElement("p");
+      help.className = "help-text text-center";
+      help.dataset.completeHelp = "";
+      help.textContent = reason;
+      actions.insertAdjacentElement("afterend", help);
+    }
+  } else if (help) {
+    help.remove();
+  }
+  return true;
+}
+
+export function patchAddExerciseResults(root, ui, settings) {
+  const inner = root?.querySelector?.("[data-region='add-exercise-results']");
+  if (!inner) return false;
+  const sessionId = ui.fitnessAddSession || "";
+  const query = ui.fitnessSearch || "";
+  const muscle = ui.fitnessMuscle || "all";
+  const listFilter = ui.fitnessListFilter || "all";
+  const replacing = ui.replaceExercise;
+  const available = settings?.equipmentAvailable || EQUIPMENT_OPTIONS.map((e) => e.id);
+  const results = filterExercises(query, muscle, {
+    equipment: available,
+    blocked: settings?.blockedExercises || [],
+    favorites: settings?.favoriteExercises || [],
+    recent: settings?.recentExercises || [],
+    listFilter,
+  }).slice(0, 40);
+  const pickAction = replacing ? "replace-pick-exercise" : "pick-exercise";
+  inner.innerHTML = renderAddExerciseResults(results, settings, sessionId, pickAction);
+  return true;
+}
+
 /** Tick live session clock without full remount. */
 export function patchSessionTimerClock(root, state) {
   const bar = root?.querySelector?.("[data-session-timer]");
@@ -547,6 +694,31 @@ export function patchSessionTimerClock(root, state) {
   if (clock) clock.textContent = formatSessionClock(liveSessionElapsedMs(session, Date.now()));
   bar.dataset.running = session.timerStartedAt ? "1" : "0";
   return true;
+}
+
+function renderAddExerciseResults(results, settings, sessionId, pickAction) {
+  if (!results.length) {
+    return `<p class="text-sm py-4 text-center" style="color:var(--mute)">No matches.</p>`;
+  }
+  return results
+    .map((ex) => {
+      const fav = isFavorite(settings, ex.name);
+      const eq = (ex.equipment || []).join(" · ");
+      return `
+                <div class="exercise-pick-row flex items-center gap-3">
+                  <button type="button" class="min-w-0 flex-1 text-left flex items-center gap-4" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
+                    ${renderMuscleThumb(ex.muscleGroup, "lg")}
+                    <span class="min-w-0">
+                      <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
+                      <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}${eq ? ` · ${escapeHtml(eq)}` : ""}</p>
+                    </span>
+                  </button>
+                  <button type="button" class="icon-btn shrink-0 ${fav ? "is-fav" : ""}" data-action="toggle-favorite-exercise" data-name="${escapeHtml(ex.name)}" aria-label="${fav ? "Unfavorite" : "Favorite"}" aria-pressed="${fav}">
+                    ${icon("star", "h-4 w-4")}
+                  </button>
+                </div>`;
+    })
+    .join("");
 }
 
 export function renderAddExerciseModal(ui, settings) {
@@ -575,7 +747,7 @@ export function renderAddExerciseModal(ui, settings) {
         </div>
         <form class="mt-4 shrink-0" data-action="search-exercise">
           <input type="hidden" name="sessionId" value="${escapeHtml(sessionId)}" />
-          <input class="input !text-base" name="query" placeholder="Search exercises..." value="${escapeHtml(query)}" autocomplete="off" />
+          <input class="input !text-base" id="add-exercise-search" name="query" placeholder="Search exercises..." value="${escapeHtml(query)}" autocomplete="off" enterkeyhint="search" />
         </form>
         <div class="segment mt-4 shrink-0" role="group" aria-label="List filter">
           ${["all", "favorites", "recent"]
@@ -600,28 +772,8 @@ export function renderAddExerciseModal(ui, settings) {
             </button>`
           ).join("")}
         </div>
-        <div class="modal-scroll-inner scroll-touch mt-5 space-y-3">
-          ${
-            results
-              .map((ex) => {
-                const fav = isFavorite(settings, ex.name);
-                const eq = (ex.equipment || []).join(" · ");
-                return `
-                <div class="exercise-pick-row flex items-center gap-3">
-                  <button type="button" class="min-w-0 flex-1 text-left flex items-center gap-4" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
-                    ${renderMuscleThumb(ex.muscleGroup, "lg")}
-                    <span class="min-w-0">
-                      <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
-                      <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}${eq ? ` · ${escapeHtml(eq)}` : ""}</p>
-                    </span>
-                  </button>
-                  <button type="button" class="icon-btn shrink-0 ${fav ? "is-fav" : ""}" data-action="toggle-favorite-exercise" data-name="${escapeHtml(ex.name)}" aria-label="${fav ? "Unfavorite" : "Favorite"}" aria-pressed="${fav}">
-                    ${icon("star", "h-4 w-4")}
-                  </button>
-                </div>`;
-              })
-              .join("") || `<p class="text-sm py-4 text-center" style="color:var(--mute)">No matches.</p>`
-          }
+        <div class="modal-scroll-inner scroll-touch mt-5 space-y-3" data-region="add-exercise-results">
+          ${renderAddExerciseResults(results, settings, sessionId, pickAction)}
         </div>
         <form class="mt-4 space-y-3 border-t pt-4 shrink-0" style="border-color:var(--rail)" data-action="custom-exercise">
           <input type="hidden" name="sessionId" value="${escapeHtml(sessionId)}" />

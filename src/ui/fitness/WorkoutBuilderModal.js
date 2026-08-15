@@ -29,7 +29,7 @@ export function renderWorkoutBuilderModal(ui, state) {
     <div class="modal-backdrop modal-enter">
       <div class="modal-sheet modal-scroll-body workout-builder-modal sheet-enter" role="dialog" aria-modal="true" aria-label="Build workout" data-stop>
         <div class="flex items-center justify-between gap-3 shrink-0">
-          <button type="button" class="btn !min-h-11 !px-4" data-action="open-workout-builder">Back</button>
+          <button type="button" class="btn !min-h-11 !px-4" data-action="${ui.workoutBuilderFromSetup ? "workout-builder-back" : "close-modal"}">Back</button>
           <button type="button" class="btn !min-h-11 !px-4" data-action="close-modal">Cancel</button>
         </div>
         <h2 class="display text-[1.75rem] leading-tight mt-4 shrink-0">Pick muscles</h2>

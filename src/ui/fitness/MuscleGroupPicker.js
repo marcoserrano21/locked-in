@@ -28,7 +28,7 @@ export function renderMuscleGroupPicker(ui, state) {
   const side = ui.muscleMapSide === "back" ? "back" : "front";
 
   return `
-    <div class="muscle-picker space-y-5">
+    <div class="muscle-picker space-y-5" id="muscle-picker-top">
       <div class="muscle-body-panel">
         <div class="segment" role="group" aria-label="Body view">
           <button type="button" class="segment-btn ${side === "front" ? "is-active accent" : ""}" data-action="muscle-map-side" data-side="front">Front</button>
@@ -37,7 +37,7 @@ export function renderMuscleGroupPicker(ui, state) {
         <div class="muscle-body-stage mt-3">
           ${renderInteractiveBodyMap(selected, side)}
         </div>
-        <p class="mt-2 text-center text-xs" style="color:var(--mute)">Tap a region to add or remove it.</p>
+        <p class="mt-2 text-center help-text">${side === "front" ? "Tap a region to add or remove it. Calves live on Back." : "Tap a region to add or remove it."}</p>
         ${
           selected.length
             ? `<div class="mt-3 flex flex-wrap justify-center gap-1.5">${selected

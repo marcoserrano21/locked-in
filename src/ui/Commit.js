@@ -1,9 +1,11 @@
 export function renderCommitModal(state) {
   const length = Number(state?.settings?.challengeLength || 30);
   const focus = state?.settings?.welcomeFocus || "both";
+  const premium = Boolean(state?.settings?.premiumUnlocked);
   const name = String(state?.settings?.displayName || "").trim() || "you";
   const first = name.split(/\s+/)[0] || "you";
   const firstLabel = `${first[0].toUpperCase()}${first.slice(1)}`;
+  const lockedLength = length === 90 && !premium ? 30 : length;
 
   let identity = `${firstLabel}, you're locking in as someone who ships the next block.`;
   if (focus === "fitness") {
@@ -32,17 +34,7 @@ export function renderCommitModal(state) {
           Soft targets do not inflate your streak. Shifts can change. The lock does not.
           After commit, add this to your home screen for one-tap daily check-ins.
         </p>
-        <div class="mt-4">
-          <p class="mb-2 text-xs" style="color:var(--mute)">Challenge length</p>
-          <div class="segment" role="group" aria-label="Challenge length">
-            ${[7, 14, 30, 90]
-              .map(
-                (d) =>
-                  `<button type="button" class="segment-btn ${length === d ? "is-active accent" : ""}" data-action="set-challenge-length" data-days="${d}">${d}</button>`
-              )
-              .join("")}
-          </div>
-        </div>
+        <p class="mt-4 help-text">Challenge length: <strong style="color:var(--text)">${lockedLength} Days</strong></p>
         <ul class="mt-4 space-y-2 text-sm">
           ${bullets
             .map(
@@ -52,7 +44,7 @@ export function renderCommitModal(state) {
             .join("")}
         </ul>
         <button type="button" class="btn btn-primary mt-6 w-full" data-action="start-challenge">
-          Lock in for ${length} days
+          Lock in for ${lockedLength} days
         </button>
       </div>
     </div>

@@ -23,6 +23,7 @@ import {
   setWorkOverride,
   markCelebrated,
   setThemeSetting,
+  setTextSizeSetting,
   toggleHustleCheck,
   resetToTodayUi,
   updateSettings,
@@ -53,10 +54,13 @@ import {
   toggleFitnessSetDone,
   deleteFitnessSet,
   deleteFitnessExercise,
-  reorderFitnessExercise,
+  reorderFitnessUnits,
+  cloneSessionExercises,
+  restoreSessionExercises,
   removeExerciseFromPair,
   dissolveFitnessPair,
   completeWorkout,
+  endWorkoutSession,
   deleteWorkout,
   toggleEquipment,
   blockExercise,
@@ -66,7 +70,6 @@ import {
   restartFromOnboarding,
   toggleFavoriteExercise,
   unblockExercise,
-  applySetupWizard,
   patchFitnessSettings,
   toggleTrainWhy,
   toggleSessionTimer,
@@ -84,13 +87,16 @@ import {
   PPL_PRESETS,
   UL_PRESETS,
   restSecondsForGoal,
+  shouldAutoStartRest,
+  normalizeFocusExercise,
+  resolveFocusFromPlan,
 } from "./fitness.js";
 import { generateWorkoutPlan } from "./fitness-plan.js";
 import { mergePlaybook } from "./hustle-playbook.js";
 import { completionForDate } from "./streaks.js";
-import { applyTheme, cycleTheme, getStoredTheme } from "./theme.js";
+import { applyTheme, applyTextSize, cycleTheme, getStoredTheme } from "./theme.js";
 import { enableBlockReminders, scheduleNextBlockReminder } from "./reminders.js";
-import { hapticCheck, hapticSuccess } from "./haptics.js";
+import { hapticCheck, hapticSuccess, playRestChime } from "./haptics.js";
 import { renderNav, visibleTabs } from "./ui/Nav.js";
 import { renderToday, patchTodayTrack } from "./ui/Today.js";
 import { renderProof } from "./ui/Proof.js";
@@ -101,17 +107,19 @@ import {
   renderFitnessCelebrate,
   renderWorkoutDetailModal,
   patchFitnessExpandState,
+  patchFitnessSetCommit,
+  patchAddExerciseResults,
   patchSessionTimerClock,
 } from "./ui/Fitness.js";
 import { renderWorkoutBuilderModal } from "./ui/fitness/WorkoutBuilderModal.js";
 import { renderFitnessPrefsModal } from "./ui/fitness/FitnessPrefsModal.js";
 import { renderWelcomeModal } from "./ui/Welcome.js";
 import { renderTipsModal } from "./ui/Tips.js";
-import { renderSetupWizard } from "./ui/SetupWizard.js";
 import {
   renderBlockEditorModal,
   renderEditConfirmModal,
   createBlockFromForm,
+  isSaveBlockEnabled,
   renderShiftSheet,
 } from "./ui/Plan.js";
 import { shareProgress } from "./share.js";
@@ -137,6 +145,12 @@ let toastTimer = null;
 let preferTodayPatch = false;
 /** When true, next subscribe render patches Fitness expand state instead of full remount. */
 let preferFitnessPatch = false;
+/** Skip remount after set weight/reps commit so the caret stays put. */
+let preferFitnessSetPatch = false;
+/** Patch add-exercise results without remounting the search field. */
+let preferAddExerciseSearchPatch = false;
+/** Skip remount after body-weight commit so the caret stays put. */
+let preferBodyWeightSkip = false;
 let deferredInstallPrompt = null;
 let canInstallPwa = false;
 let lastTab = null;
@@ -191,8 +205,11 @@ function maybeRegenActiveWorkoutPlan({ toastLabel } = {}) {
     sessionMinutes: settings.sessionMinutes || 60,
     bodyWeight: settings.bodyWeight,
     preferredUnit: settings.preferredUnit || "lb",
+    focusExercise: settings.focusExercise || null,
   });
   replaceSessionExercises(session.id, plan);
+  const nextFocus = resolveFocusFromPlan(plan, settings.focusExercise);
+  patchFitnessSettings({ focusExercise: nextFocus });
   const level = settings.experienceLevel || "beginner";
   showToast(toastLabel || `Plan updated for ${level}`);
   return true;
@@ -200,7 +217,7 @@ function maybeRegenActiveWorkoutPlan({ toastLabel } = {}) {
 
 function convertBodyWeight(value, fromUnit, toUnit) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return toUnit === "kg" ? 77 : 170;
+  if (!Number.isFinite(n) || n <= 0) return null;
   if (fromUnit === toUnit) return n;
   if (fromUnit === "lb" && toUnit === "kg") return Math.round((n / 2.20462) * 10) / 10;
   return Math.round(n * 2.20462);
@@ -244,6 +261,7 @@ function ensureTipsModal() {
 }
 
 function render() {
+  if (fitnessPointerDragging) return;
   if (!state) {
     renderBootError("Saved profile data is missing or corrupt.");
     return;
@@ -285,6 +303,30 @@ function render() {
   }
   preferFitnessPatch = false;
 
+  if (
+    preferFitnessSetPatch &&
+    !needsCommit &&
+    !ui.celebrate &&
+    !ui.modal &&
+    ui.tab === "freelance" &&
+    (ui.hustleView || "fitness") === "fitness"
+  ) {
+    preferFitnessSetPatch = false;
+    if (patchFitnessSetCommit(app, state, ui)) return;
+  }
+  preferFitnessSetPatch = false;
+
+  if (preferAddExerciseSearchPatch && ui.modal === "add-exercise") {
+    preferAddExerciseSearchPatch = false;
+    if (patchAddExerciseResults(app, ui, state.fitnessSettings)) return;
+  }
+  preferAddExerciseSearchPatch = false;
+
+  if (preferBodyWeightSkip) {
+    preferBodyWeightSkip = false;
+    return;
+  }
+
   const tabChanged = lastTab != null && lastTab !== ui.tab;
   lastTab = ui.tab;
 
@@ -299,7 +341,7 @@ function render() {
   if (needsCommit) modal = renderCommitModal(state);
   else if (ui.modal === "edit-confirm") modal = renderEditConfirmModal();
   else if (ui.modal === "block-editor") modal = renderBlockEditorModal(ui);
-  else if (ui.modal === "uber-editor") modal = renderUberEditorModal(ui);
+  else if (ui.modal === "uber-editor") modal = renderUberEditorModal(ui, state);
   else if (ui.modal === "outreach-editor") modal = renderOutreachEditorModal(ui);
   else if (ui.modal === "profile-editor") modal = renderProfileEditorModal(ui, listProfiles());
   else if (ui.modal === "delete-profile") modal = renderDeleteProfileModal(ui);
@@ -307,7 +349,6 @@ function render() {
   else if (ui.modal === "restart-onboarding") modal = renderRestartOnboardingModal(state);
   else if (ui.modal === "welcome") modal = renderWelcomeModal(ui, state);
   else if (ui.modal === "tips") modal = renderTipsModal(state, ui);
-  else if (ui.modal === "setup-wizard") modal = renderSetupWizard(state, ui);
   else if (ui.modal === "add-exercise") modal = renderAddExerciseModal(ui, state.fitnessSettings);
   else if (ui.modal === "fitness-prefs" || ui.modal === "workout-setup")
     modal = renderFitnessPrefsModal(ui, state);
@@ -319,7 +360,7 @@ function render() {
 
   const celebrate = ui.celebrate
     ? ui.celebrate.type === "fitness"
-      ? renderFitnessCelebrate(ui.celebrate)
+      ? renderFitnessCelebrate(ui.celebrate, ui)
       : renderCelebrate(ui.celebrate, state)
     : "";
   const toast = renderToast(ui.toast);
@@ -350,7 +391,9 @@ function render() {
   }
 
   restoreFocus(focusSnap);
-  trapModalFocus({ focusFirst: modalJustOpened && Boolean(ui.modal) });
+  trapModalFocus({
+    focusFirst: modalJustOpened && Boolean(ui.modal) && ui.modal !== "add-exercise",
+  });
   lastTrappedModal = ui.modal || null;
 
   scheduleNextBlockReminder(state, ui.selectedDate || todayKey());
@@ -420,7 +463,45 @@ function sealFitnessSession(sessionId) {
     fitnessTab: "today",
     restTimer: null,
     fitnessOpenExerciseId: null,
-    fitnessOpenMode: "one",
+    fitnessOpenMode: "multi",
+    fitnessOpenIds: [],
+    fitnessCooldownChecked: [],
+    fitnessCooldownSkipped: false,
+  });
+  return true;
+}
+
+/** End session early with partial celebrate. */
+function endFitnessSessionEarly(sessionId) {
+  if (!sessionId) return false;
+  if (ui.celebrate?.type === "fitness") return false;
+  const session = (state.fitnessLog || []).find((w) => w.id === sessionId);
+  if (!session || session.completedAt) {
+    showToast("Workout already sealed");
+    return false;
+  }
+  const hasWork =
+    (session.exercises || []).some((ex) => (ex.sets || []).some((s) => s.done)) ||
+    (session.exercises || []).length > 0;
+  if (!hasWork) {
+    showToast("Nothing to seal yet");
+    return false;
+  }
+  if (!window.confirm("End session now? Logged sets are saved. Incomplete sets stay incomplete.")) {
+    return false;
+  }
+  const payload = endWorkoutSession(sessionId);
+  if (!payload) return false;
+  hapticSuccess();
+  setUi({
+    celebrate: payload,
+    fitnessTab: "today",
+    restTimer: null,
+    fitnessOpenExerciseId: null,
+    fitnessOpenMode: "multi",
+    fitnessOpenIds: [],
+    fitnessCooldownChecked: [],
+    fitnessCooldownSkipped: false,
   });
   return true;
 }
@@ -556,6 +637,7 @@ function clearModalState() {
     openBlockMenuIndex: null,
     premiumError: null,
     tipsTrack: null,
+    rebuildSessionId: null,
     selectedMuscleGroups: ui.modal === "workout-builder" ? [] : ui.selectedMuscleGroups,
   });
 }
@@ -601,9 +683,21 @@ function restoreFocus(snap) {
   if (!next) return;
   try {
     next.focus({ preventScroll: true });
-    if (snap.start != null && typeof next.setSelectionRange === "function") {
-      const len = String(next.value ?? "").length;
-      next.setSelectionRange(Math.min(snap.start, len), Math.min(snap.end ?? snap.start, len));
+    const len = String(next.value ?? "").length;
+    if (typeof next.setSelectionRange === "function") {
+      try {
+        if (snap.start != null) {
+          next.setSelectionRange(Math.min(snap.start, len), Math.min(snap.end ?? snap.start, len));
+        } else {
+          next.setSelectionRange(len, len);
+        }
+      } catch {
+        try {
+          next.setSelectionRange(len, len);
+        } catch {
+          /* ignore */
+        }
+      }
     }
   } catch {
     /* ignore */
@@ -624,9 +718,31 @@ function patchRestTimerBar() {
 function commitFitnessSetField(el) {
   if (!el?.dataset?.session || !el.dataset.exercise || !el.dataset.set || !el.dataset.field) return;
   const value = el.dataset.field === "reps" ? parseInt(el.value, 10) : parseFloat(el.value);
+  preferFitnessSetPatch = true;
   updateFitnessSet(el.dataset.session, el.dataset.exercise, el.dataset.set, {
     [el.dataset.field]: Number.isFinite(value) ? value : 0,
   });
+}
+
+function commitBodyWeight(el) {
+  const raw = String(el?.value || "").trim();
+  const n = parseFloat(raw);
+  preferBodyWeightSkip = true;
+  if (!raw || !Number.isFinite(n) || n <= 0) {
+    patchFitnessSettings({ bodyWeight: null, bodyWeightEntered: false });
+    return;
+  }
+  patchFitnessSettings({ bodyWeight: n, bodyWeightEntered: true });
+}
+
+function placeCaretAtEnd(el) {
+  if (!el || typeof el.setSelectionRange !== "function") return;
+  const len = String(el.value ?? "").length;
+  try {
+    el.setSelectionRange(len, len);
+  } catch {
+    /* ignore */
+  }
 }
 
 function trapModalFocus({ focusFirst = false } = {}) {
@@ -673,6 +789,7 @@ app.addEventListener("click", (event) => {
     return;
   }
   const action = t.dataset.action;
+  if (action === "set-body-weight" || action === "fitness-set-field") return;
 
   if (action === "toggle-date-picker") {
     const field = t.closest(".date-field");
@@ -769,11 +886,30 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "open-workout-builder") {
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    const prefs = Boolean(settings.prefsCaptured);
     setUi({
-      modal: "workout-setup",
+      modal: prefs ? "workout-builder" : "workout-setup",
       fitnessPrefsMode: "build",
       selectedMuscleGroups: [],
       workoutBuilderPreset: "custom",
+      workoutBuilderFromSetup: false,
+    });
+    if (prefs) {
+      requestAnimationFrame(() => {
+        const scroller = document.querySelector(".modal-scroll-inner");
+        if (scroller) scroller.scrollTop = 0;
+        document.getElementById("muscle-picker-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    return;
+  }
+
+  if (action === "workout-builder-back") {
+    setUi({
+      modal: "workout-setup",
+      fitnessPrefsMode: "build",
+      workoutBuilderFromSetup: false,
     });
     return;
   }
@@ -815,6 +951,12 @@ app.addEventListener("click", (event) => {
       modal: "workout-builder",
       selectedMuscleGroups: [],
       workoutBuilderPreset: "custom",
+      workoutBuilderFromSetup: true,
+    });
+    requestAnimationFrame(() => {
+      const scroller = document.querySelector(".modal-scroll-inner");
+      if (scroller) scroller.scrollTop = 0;
+      document.getElementById("muscle-picker-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     return;
   }
@@ -841,23 +983,39 @@ app.addEventListener("click", (event) => {
     const id = t.dataset.exercise || "";
     const expanded = t.getAttribute("aria-expanded") === "true";
     preferFitnessPatch = true;
+    const openFromDom = [...app.querySelectorAll('[data-action="toggle-fitness-exercise"][aria-expanded="true"]')]
+      .map((btn) => btn.dataset.exercise)
+      .filter(Boolean);
+    let next;
     if (expanded) {
-      setUi({ fitnessOpenMode: "none", fitnessOpenExerciseId: "" });
+      next = openFromDom.filter((x) => x !== id);
     } else {
-      setUi({ fitnessOpenMode: "one", fitnessOpenExerciseId: id });
+      next = [...new Set([...openFromDom, id])];
     }
+    setUi({ fitnessOpenMode: "multi", fitnessOpenIds: next, fitnessOpenExerciseId: id });
+    return;
+  }
+
+  if (action === "toggle-fitness-pair") {
+    const pairId = t.dataset.pairId || "";
+    if (!pairId) return;
+    const collapsed = ui.fitnessCollapsedPairIds || [];
+    const next = collapsed.includes(pairId)
+      ? collapsed.filter((id) => id !== pairId)
+      : [...collapsed, pairId];
+    setUi({ fitnessCollapsedPairIds: next });
     return;
   }
 
   if (action === "fitness-expand-all") {
     preferFitnessPatch = true;
-    setUi({ fitnessOpenMode: "all", fitnessOpenExerciseId: null });
+    setUi({ fitnessOpenMode: "all", fitnessOpenIds: [], fitnessCollapsedPairIds: [] });
     return;
   }
 
   if (action === "fitness-collapse-all") {
     preferFitnessPatch = true;
-    setUi({ fitnessOpenMode: "none", fitnessOpenExerciseId: "" });
+    setUi({ fitnessOpenMode: "none", fitnessOpenIds: [] });
     return;
   }
 
@@ -875,11 +1033,9 @@ app.addEventListener("click", (event) => {
     setUi({ workoutBuilderPreset: preset, selectedMuscleGroups: groups });
     if (preset === "custom") {
       requestAnimationFrame(() => {
-        const grid =
-          document.querySelector(".muscle-pick-grid") ||
-          document.getElementById("muscle-groups") ||
-          document.querySelector(".muscle-grid-scroll");
-        grid?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const scroller = document.querySelector(".modal-scroll-inner");
+        if (scroller) scroller.scrollTop = 0;
+        document.getElementById("muscle-picker-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     }
     return;
@@ -918,25 +1074,36 @@ app.addEventListener("click", (event) => {
       sessionMinutes: settings.sessionMinutes || 60,
       bodyWeight: settings.bodyWeight,
       preferredUnit: settings.preferredUnit || "lb",
+      focusExercise: settings.focusExercise || null,
     });
-    startWorkout();
-    const session = activeSessionForDate(state.fitnessLog);
-    if (session?.id) {
-      plan.forEach((ex) =>
-        addExerciseToSession(session.id, ex.name, ex.muscleGroup, {
-          sets: ex.sets,
-          reps: ex.reps,
-          weight: ex.weight,
-          pairId: ex.pairId,
-          pairType: ex.pairType,
-          role: ex.role,
-          restSeconds: ex.restSeconds,
-        })
-      );
+    const rebuildId = ui.rebuildSessionId || null;
+    const existing =
+      (rebuildId && (state.fitnessLog || []).find((w) => w.id === rebuildId && !w.completedAt)) ||
+      activeSessionForDate(state.fitnessLog);
+    if (existing?.id) {
+      replaceSessionExercises(existing.id, plan);
+    } else {
+      startWorkout();
+      const session = activeSessionForDate(state.fitnessLog);
+      if (session?.id) {
+        plan.forEach((ex) =>
+          addExerciseToSession(session.id, ex.name, ex.muscleGroup, {
+            sets: ex.sets,
+            reps: ex.reps,
+            weight: ex.weight,
+            pairId: ex.pairId,
+            pairType: ex.pairType,
+            role: ex.role,
+            restSeconds: ex.restSeconds,
+          })
+        );
+      }
     }
-    if (settings.goal) {
-      patchFitnessSettings({ restSeconds: restSecondsForGoal(settings.goal) });
-    }
+    const nextFocus = resolveFocusFromPlan(plan, settings.focusExercise);
+    patchFitnessSettings({
+      focusExercise: nextFocus,
+      ...(settings.goal ? { restSeconds: restSecondsForGoal(settings.goal) } : {}),
+    });
     clearModalState();
     showToast(plan.length ? `Built ${plan.length} exercises` : "No matches for your equipment");
     return;
@@ -1072,11 +1239,14 @@ app.addEventListener("click", (event) => {
   if (action === "exercise-menu-delete") {
     if (t.dataset.set) {
       deleteFitnessSet(t.dataset.session, t.dataset.exercise, t.dataset.set);
-    } else {
-      deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
+      setUi({ openExerciseMenu: null });
+      showToast("Deleted");
+      return;
     }
+    if (!window.confirm("Delete this exercise and its sets from today's session?")) return;
+    offerFitnessUndo(t.dataset.session, "Exercise removed");
+    deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
     setUi({ openExerciseMenu: null });
-    showToast("Deleted");
     return;
   }
 
@@ -1087,9 +1257,44 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "exercise-menu-make-focus") {
+    const name = String(t.dataset.name || "").trim();
+    if (!name) return;
+    const prev = normalizeFocusExercise(state.fitnessSettings?.focusExercise);
+    const same = prev && prev.name.toLowerCase() === name.toLowerCase();
+    patchFitnessSettings({
+      focusExercise: same
+        ? prev
+        : { name, startedAt: todayKey(), weekIndex: 1 },
+    });
+    setUi({ openExerciseMenu: null });
+    showToast(same ? `Focus · Week ${prev.weekIndex}` : `Focus · ${name}`);
+    return;
+  }
+
+  if (action === "exercise-menu-clear-focus") {
+    patchFitnessSettings({ focusExercise: null });
+    setUi({ openExerciseMenu: null });
+    showToast("Focus cleared");
+    return;
+  }
+
   if (action === "dissolve-fitness-pair") {
+    offerFitnessUndo(t.dataset.session, "Group ungrouped");
     dissolveFitnessPair(t.dataset.session, t.dataset.pairId);
-    showToast("Group dissolved");
+    return;
+  }
+
+  if (action === "fitness-undo") {
+    const undo = ui.fitnessUndo;
+    if (!undo?.sessionId || !undo.exercises) { setUi({ fitnessUndo: null }); return; }
+    const ok = restoreSessionExercises(undo.sessionId, undo.exercises);
+    if (fitnessUndoTimer) {
+      clearTimeout(fitnessUndoTimer);
+      fitnessUndoTimer = null;
+    }
+    setUi({ fitnessUndo: null });
+    showToast(ok ? "Undone" : "Nothing to undo");
     return;
   }
 
@@ -1168,19 +1373,17 @@ app.addEventListener("click", (event) => {
     toggleFitnessSetDone(t.dataset.session, t.dataset.exercise, t.dataset.set);
     hapticCheck();
     const session = (state.fitnessLog || []).find((w) => w.id === t.dataset.session);
-    if (session && !session.completedAt && canCompleteWorkout(session).ok) {
-      sealFitnessSession(t.dataset.session);
-      return;
+    if (session && shouldAutoStartRest(session, t.dataset.exercise, t.dataset.set)) {
+      const seconds = Number(state.fitnessSettings?.restSeconds || restSecondsForGoal(state.fitnessSettings?.goal));
+      setUi({ restTimer: { endsAt: Date.now() + seconds * 1000, seconds, phase: "run" } });
     }
-    const seconds = Number(state.fitnessSettings?.restSeconds || 90);
-    setUi({ restTimer: { endsAt: Date.now() + seconds * 1000, seconds } });
     return;
   }
 
   if (action === "start-rest-timer") {
     const seconds = Number(t.dataset.seconds) || 90;
     setUi({
-      restTimer: { endsAt: Date.now() + seconds * 1000, seconds },
+      restTimer: { endsAt: Date.now() + seconds * 1000, seconds, phase: "run" },
       fitnessRestPresetsOpen: false,
       fitnessSessionMenuOpen: false,
     });
@@ -1192,14 +1395,41 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "toggle-warmup-move") {
+    const id = t.dataset.id;
+    const prev = ui.fitnessWarmupChecked || [];
+    const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    setUi({ fitnessWarmupChecked: next });
+    return;
+  }
+
+  if (action === "toggle-warmup-collapse") {
+    setUi({ fitnessWarmupCollapsed: !ui.fitnessWarmupCollapsed });
+    return;
+  }
+
+  if (action === "toggle-cooldown-move") {
+    const id = t.dataset.id;
+    const prev = ui.fitnessCooldownChecked || [];
+    const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    setUi({ fitnessCooldownChecked: next });
+    return;
+  }
+
+  if (action === "skip-cooldown") {
+    setUi({ fitnessCooldownSkipped: true });
+    return;
+  }
+
   if (action === "delete-fitness-set") {
     deleteFitnessSet(t.dataset.session, t.dataset.exercise, t.dataset.set);
     return;
   }
 
   if (action === "delete-fitness-exercise") {
+    if (!window.confirm("Delete this exercise and its sets from today's session?")) return;
+    offerFitnessUndo(t.dataset.session, "Exercise removed");
     deleteFitnessExercise(t.dataset.session, t.dataset.exercise);
-    showToast("Exercise removed");
     return;
   }
 
@@ -1208,7 +1438,13 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "end-workout-session") {
+    endFitnessSessionEarly(t.dataset.session);
+    return;
+  }
+
   if (action === "delete-workout") {
+    if (!window.confirm("Delete this workout from history? This cannot be undone.")) return;
     deleteWorkout(t.dataset.session);
     if (ui.modal === "workout-detail") clearModalState();
     showToast("Workout removed");
@@ -1234,6 +1470,21 @@ app.addEventListener("click", (event) => {
   if (action === "welcome-demo") {
     loadMarcoDemo();
     showToast("Marco demo loaded");
+    return;
+  }
+
+  if (action === "toggle-setup-tip") {
+    event.preventDefault();
+    event.stopPropagation();
+    const tip = t.dataset.tip || null;
+    setUi({ setupTipId: ui.setupTipId === tip ? null : tip });
+    return;
+  }
+
+  if (action === "welcome-focus-pick") {
+    const focus = t.value || t.dataset.focus || null;
+    if (!focus) return;
+    setUi({ welcomeFocus: focus });
     return;
   }
 
@@ -1270,11 +1521,11 @@ app.addEventListener("click", (event) => {
     const days = Number(t.dataset.days);
     if (days === 90 && !state.settings?.premiumUnlocked) {
       setUi({ modal: "premium-unlock", premiumError: null });
-      showToast("90-day lock-in is Premium");
+      showToast("90-day lock-in is a beta preview");
       return;
     }
     if (!setChallengeLength(days)) {
-      showToast("That length needs Premium");
+      showToast("That length needs beta preview");
       return;
     }
     setUi({ welcomeChallengeLength: days });
@@ -1303,8 +1554,7 @@ app.addEventListener("click", (event) => {
   if (action === "rebuild-workout") {
     const sessionId = t.dataset.session;
     if (!sessionId) return;
-    if (!window.confirm("Replace today's workout? Current exercises will be cleared.")) return;
-    deleteWorkout(sessionId);
+    if (!window.confirm("Replace today's workout? Current exercises stay until you save a new plan.")) return;
     setUi({
       fitnessOpenExerciseId: null,
       fitnessOpenMode: "one",
@@ -1314,14 +1564,20 @@ app.addEventListener("click", (event) => {
       workoutBuilderPreset: "custom",
       fitnessSessionMenuOpen: false,
       fitnessRestPresetsOpen: false,
+      rebuildSessionId: sessionId,
     });
-    showToast("Fresh session. Confirm setup, then pick muscles");
+    showToast("Confirm setup, then pick muscles. Cancel keeps your plan.");
     return;
   }
 
   if (action === "set-fitness-goal-radio") {
-    const goal = t.dataset.goal || t.value || "build_muscle";
-    patchFitnessSettings({ goal, restSeconds: restSecondsForGoal(goal) });
+    const goal = t.dataset.goal || "";
+    const current = state.fitnessSettings?.goal || null;
+    if (current === goal) {
+      patchFitnessSettings({ goal: null });
+    } else if (goal) {
+      patchFitnessSettings({ goal, restSeconds: restSecondsForGoal(goal) });
+    }
     return;
   }
 
@@ -1358,22 +1614,30 @@ app.addEventListener("click", (event) => {
 
   if (action === "disable-premium-preview") {
     setPremiumUnlocked(false);
-    showToast("Premium preview off");
+    showToast("Command center beta off");
+    return;
+  }
+
+  if (action === "toggle-premium-beta") {
+    const on = Boolean(t.checked);
+    setPremiumUnlocked(on);
+    showToast(on ? "Command center beta on" : "Command center beta off");
     return;
   }
 
   if (action === "toggle-day30-section") {
     const dayNum = state.challenge ? challengeDayNumber(state.challenge) : 0;
+    const lengthDays = state.challenge?.lengthDays || state.settings?.challengeLength || 30;
     const unlocked = isChallengeUnlocked(state.challenge);
+    const nearEnd = dayNum >= Math.ceil(lengthDays * 0.7);
     const currentlyOpen =
-      ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || dayNum >= 21;
+      ui.day30SectionOpen != null ? Boolean(ui.day30SectionOpen) : unlocked || nearEnd;
     setUi({ day30SectionOpen: !currentlyOpen });
     return;
   }
 
   if (action === "toggle-profile-challenge") {
-    const open = ui.profileChallengeOpen !== false;
-    setUi({ profileChallengeOpen: !open });
+    setUi({ profileChallengeOpen: !Boolean(ui.profileChallengeOpen) });
     return;
   }
 
@@ -1532,15 +1796,9 @@ app.addEventListener("click", (event) => {
     const settings = state.fitnessSettings || defaultFitnessSettings();
     const prev = settings.preferredUnit === "kg" ? "kg" : "lb";
     if (next === prev) return;
-    const bodyWeight = convertBodyWeight(settings.bodyWeight, prev, next);
+    const entered = settings.prefsCaptured || settings.bodyWeightEntered;
+    const bodyWeight = entered ? convertBodyWeight(settings.bodyWeight, prev, next) : null;
     patchFitnessSettings({ preferredUnit: next, bodyWeight });
-    return;
-  }
-
-  if (action === "set-body-weight") {
-    const n = Number(t.value);
-    if (!Number.isFinite(n) || n <= 0) return;
-    patchFitnessSettings({ bodyWeight: n });
     return;
   }
 
@@ -1582,6 +1840,14 @@ app.addEventListener("click", (event) => {
     if (!next) return;
     setThemeSetting(next);
     applyTheme(next);
+    return;
+  }
+
+  if (action === "set-text-size") {
+    const size = t.dataset.size || "default";
+    setTextSizeSetting(size);
+    applyTextSize(size, { force: true });
+    showToast(size === "default" ? "Text size default" : `Text size ${size}`);
     return;
   }
 
@@ -1632,7 +1898,17 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "switch-profile") {
-    switchProfile(t.dataset.id);
+    const id = t.dataset.id;
+    const profile = listProfiles().find((p) => p.id === id);
+    const name = profile?.displayName || "this profile";
+    if (
+      !window.confirm(
+        `Switch to ${name}? Unsaved UI state stays on this device track.`
+      )
+    ) {
+      return;
+    }
+    switchProfile(id);
     showToast("Profile switched");
     return;
   }
@@ -1712,12 +1988,12 @@ app.addEventListener("click", (event) => {
     const days = Number(t.dataset.days);
     if (days === 90 && !state.settings?.premiumUnlocked) {
       setUi({ modal: "premium-unlock", premiumError: null });
-      showToast("90-day lock-in is Premium");
+      showToast("90-day lock-in is a beta preview");
       return;
     }
     const ok = setChallengeLength(days);
     if (!ok) {
-      showToast("That length needs Premium");
+      showToast("That length needs beta preview");
       return;
     }
     showToast(`Challenge length ${days} days`);
@@ -1807,27 +2083,6 @@ app.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "setup-wizard-next") {
-    setUi({ setupWizardStep: Math.min(4, Number(ui.setupWizardStep || 1) + 1) });
-    return;
-  }
-
-  if (action === "setup-wizard-back") {
-    setUi({ setupWizardStep: Math.max(1, Number(ui.setupWizardStep || 1) - 1) });
-    return;
-  }
-
-  if (action === "setup-wizard-finish") {
-    applySetupWizard({
-      buildDays: ui.setupBuildDays || [0, 1, 2],
-      modules: ui.setupModules || { fitness: true, money: false, hustle: false },
-      blockPreset: ui.setupBlockPreset || "morning",
-      hustlePack: ui.setupHustlePack || "blank",
-    });
-    showToast("Track ready. Lock in when you're set.");
-    return;
-  }
-
   if (action === "dismiss-celebrate") {
     const date = ui.celebrate?.date || todayKey();
     markCelebrated(date);
@@ -1841,6 +2096,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "delete-uber") {
+    if (!window.confirm("Delete this miles session log?")) return;
     deleteUberEntry(t.dataset.id);
     clearModalState();
     showToast("Session removed");
@@ -1863,6 +2119,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "delete-outreach") {
+    if (!window.confirm("Delete this outreach log?")) return;
     deleteOutreach(t.dataset.id);
     clearModalState();
     showToast("Log removed");
@@ -2025,6 +2282,13 @@ app.addEventListener("click", (event) => {
   }
 });
 
+function syncBlockEditorSaveButton(fromEl) {
+  const form = fromEl?.closest?.('form[data-action="save-block"]') || fromEl;
+  if (!form || form.dataset?.action !== "save-block") return;
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) btn.disabled = !isSaveBlockEnabled(form, ui.editingBlock);
+}
+
 app.addEventListener("change", async (event) => {
   const input = event.target;
   if (input?.dataset?.action === "fitness-set-field") {
@@ -2036,13 +2300,16 @@ app.addEventListener("change", async (event) => {
     return;
   }
   if (input?.dataset?.action === "set-body-weight") {
-    const n = Number(input.value);
-    if (!Number.isFinite(n) || n <= 0) return;
-    patchFitnessSettings({ bodyWeight: n });
+    commitBodyWeight(input);
     return;
   }
   if (input?.dataset?.action === "toggle-catchup") {
     updateSettings({ yesterdayCatchUp: Boolean(input.checked) });
+    return;
+  }
+  if (input?.dataset?.action === "toggle-premium-beta") {
+    setPremiumUnlocked(Boolean(input.checked));
+    showToast(input.checked ? "Command center beta on" : "Command center beta off");
     return;
   }
   if (input?.dataset?.action === "setup-toggle-module") {
@@ -2054,6 +2321,18 @@ app.addEventListener("change", async (event) => {
   }
   if (input?.dataset?.action === "setup-block-preset") {
     setUi({ setupBlockPreset: input.value || "morning" });
+    return;
+  }
+  if (input?.dataset?.action === "welcome-focus-pick") {
+    setUi({ welcomeFocus: input.value || null });
+    return;
+  }
+  if (input?.dataset?.action === "welcome-block-preset") {
+    setUi({ setupBlockPreset: input.value || "morning" });
+    return;
+  }
+  if (input?.closest?.('form[data-action="save-block"]')) {
+    syncBlockEditorSaveButton(input);
     return;
   }
   if (input?.dataset?.action !== "import-backup") return;
@@ -2087,6 +2366,10 @@ app.addEventListener("input", (event) => {
     if (btn) btn.disabled = !String(el.value || "").trim();
     return;
   }
+  if (el?.closest?.('form[data-action="save-block"]')) {
+    syncBlockEditorSaveButton(el);
+    return;
+  }
   if (el?.dataset?.action === "set-override-date") {
     // Commit on change/blur only — avoid remounting while typing the date.
     return;
@@ -2095,11 +2378,15 @@ app.addEventListener("input", (event) => {
     // Commit on change/blur only so focus survives keystrokes.
     return;
   }
+  if (el?.dataset?.action === "set-body-weight") {
+    return;
+  }
   if (el?.name === "query" && el.closest('[data-action="search-exercise"]')) {
     const q = el.value;
     clearTimeout(fitnessSearchTimer);
     fitnessSearchTimer = setTimeout(() => {
       if (ui.fitnessSearch === q) return;
+      preferAddExerciseSearchPatch = true;
       setUi({ fitnessSearch: q });
     }, 280);
   }
@@ -2111,97 +2398,365 @@ app.addEventListener("blur", (event) => {
     commitFitnessSetField(el);
     return;
   }
+  if (el?.dataset?.action === "set-body-weight") {
+    commitBodyWeight(el);
+    return;
+  }
   if (el?.dataset?.action === "set-override-date" && el.value && el.value !== ui.overrideDate) {
     setUi({ overrideDate: el.value });
   }
 }, true);
+
+app.addEventListener("focusin", (event) => {
+  const el = event.target;
+  if (el?.id === "fitness-body-weight" || el?.dataset?.action === "fitness-set-field") {
+    requestAnimationFrame(() => placeCaretAtEnd(el));
+  }
+});
 
 function announceFitnessDnD(message) {
   const live = app.querySelector("#fitness-dnd-live");
   if (live) live.textContent = message;
 }
 
-let fitnessDragFromId = null;
+let fitnessPointerDragging = false;
 let fitnessDragSessionId = null;
+let fitnessDragKind = null;
+let fitnessDragFromId = null;
+let fitnessDragPairId = null;
+let fitnessGhost = null;
+let fitnessPlaceholder = null;
+let fitnessList = null;
+let fitnessDragOffsetY = 0;
+let fitnessDragStartIndex = -1;
+let fitnessDragLastIndex = -1;
+let fitnessDragAnnounceAt = 0;
+let fitnessSuppressClick = false;
+let fitnessUndoTimer = null;
+let fitnessAutoScrollRaf = null;
+let fitnessLastClientY = 0;
 
-app.addEventListener("dragstart", (event) => {
-  const handle = event.target.closest('[data-action="fitness-drag-handle"]');
-  if (!handle) return;
-  const card = handle.closest("[data-exercise-card]");
-  if (!card) return;
-  fitnessDragFromId = handle.dataset.exercise;
-  fitnessDragSessionId = handle.dataset.session;
-  card.classList.add("is-dragging");
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", fitnessDragFromId);
-  announceFitnessDnD(`Picked up ${card.dataset.exerciseName || "exercise"}. Drag to reorder.`);
-});
+function fitnessUnitKey(el) {
+  if (!el) return null;
+  if (el.matches?.("[data-pair-group]")) {
+    return { type: "pair", pairId: el.dataset.pairId || "" };
+  }
+  if (el.matches?.("[data-exercise-card]")) {
+    return { type: "solo", id: el.dataset.exerciseId || "" };
+  }
+  return null;
+}
 
-app.addEventListener("dragend", (event) => {
-  const card = event.target.closest?.("[data-exercise-card]") || app.querySelector(".fitness-exercise-card.is-dragging");
-  card?.classList.remove("is-dragging");
-  app.querySelectorAll(".fitness-exercise-card.is-drop-target, .fitness-pair-group.is-drop-target").forEach((el) =>
-    el.classList.remove("is-drop-target")
+function fitnessListUnits(list) {
+  if (!list) return [];
+  return [...list.children].filter(
+    (el) => el !== fitnessGhost && el !== fitnessPlaceholder && el.matches?.("[data-exercise-card], [data-pair-group]")
   );
-  fitnessDragFromId = null;
+}
+
+function fitnessPlaceholderIndex() {
+  if (!fitnessList || !fitnessPlaceholder) return -1;
+  let index = 0;
+  for (const el of fitnessList.children) {
+    if (el === fitnessGhost) continue;
+    if (el === fitnessPlaceholder) return index;
+    if (el.matches?.("[data-exercise-card], [data-pair-group]")) index += 1;
+  }
+  return index;
+}
+
+function updateFitnessDragBadge(fromIndex, toIndex, total) {
+  const el = fitnessGhost;
+  if (!el || fromIndex < 0 || total < 1) return;
+  let badge = el.querySelector(":scope > .fitness-dnd-badge") || el.querySelector(".fitness-dnd-badge");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "fitness-dnd-badge";
+    badge.setAttribute("aria-hidden", "true");
+    el.appendChild(badge);
+  }
+  const pos = Math.max(1, Math.min(total, (toIndex >= 0 ? toIndex : fromIndex) + 1));
+  const arrow = toIndex > fromIndex ? "↓" : toIndex < fromIndex ? "↑" : "·";
+  badge.textContent = `${arrow} ${pos} / ${total}`;
+}
+
+function positionFitnessGhost(clientY) {
+  if (!fitnessGhost) return;
+  const top = clientY - fitnessDragOffsetY;
+  fitnessGhost.style.top = `${top}px`;
+}
+
+function moveFitnessPlaceholder(clientY) {
+  if (!fitnessList || !fitnessPlaceholder) return;
+  const units = fitnessListUnits(fitnessList);
+  let placed = false;
+  for (const unit of units) {
+    const rect = unit.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) {
+      if (unit.previousElementSibling !== fitnessPlaceholder) {
+        fitnessList.insertBefore(fitnessPlaceholder, unit);
+      }
+      placed = true;
+      break;
+    }
+  }
+  if (!placed && fitnessPlaceholder.parentNode === fitnessList) {
+    fitnessList.appendChild(fitnessPlaceholder);
+  }
+}
+
+function fitnessDragScrollDelta(clientY) {
+  const edge = 64;
+  const vh = window.innerHeight;
+  if (clientY < edge) return -12;
+  if (clientY > vh - edge) return 12;
+  return 0;
+}
+
+function stopFitnessAutoScroll() {
+  if (fitnessAutoScrollRaf) {
+    cancelAnimationFrame(fitnessAutoScrollRaf);
+    fitnessAutoScrollRaf = null;
+  }
+}
+
+function tickFitnessDrag(clientY) {
+  fitnessLastClientY = clientY;
+  positionFitnessGhost(clientY);
+  const dy = fitnessDragScrollDelta(clientY);
+  if (dy) window.scrollBy(0, dy);
+  moveFitnessPlaceholder(clientY);
+  const total = fitnessListUnits(fitnessList).length + 1;
+  const toIndex = fitnessPlaceholderIndex();
+  updateFitnessDragBadge(fitnessDragStartIndex, toIndex, total);
+  if (toIndex !== fitnessDragLastIndex && Date.now() - fitnessDragAnnounceAt > 400) {
+    fitnessDragLastIndex = toIndex;
+    fitnessDragAnnounceAt = Date.now();
+    const arrow = toIndex > fitnessDragStartIndex ? "down" : toIndex < fitnessDragStartIndex ? "up" : "same";
+    announceFitnessDnD(`Position ${toIndex + 1} of ${total}, ${arrow}`);
+  }
+  if (dy) {
+    stopFitnessAutoScroll();
+    fitnessAutoScrollRaf = requestAnimationFrame(() => tickFitnessDrag(fitnessLastClientY));
+  } else {
+    stopFitnessAutoScroll();
+  }
+}
+
+function collectFitnessUnitKeys() {
+  if (!fitnessList || !fitnessGhost) return [];
+  const keys = [];
+  for (const el of fitnessList.children) {
+    if (el === fitnessPlaceholder) {
+      const key = fitnessUnitKey(fitnessGhost);
+      if (key) keys.push(key);
+      continue;
+    }
+    if (el === fitnessGhost) continue;
+    const key = fitnessUnitKey(el);
+    if (key) keys.push(key);
+  }
+  return keys;
+}
+
+function restoreFitnessGhostToList() {
+  if (!fitnessGhost) return;
+  fitnessGhost.classList.remove("fitness-drag-ghost");
+  fitnessGhost.style.cssText = "";
+  if (fitnessPlaceholder?.parentNode) {
+    fitnessPlaceholder.parentNode.insertBefore(fitnessGhost, fitnessPlaceholder);
+  }
+  fitnessPlaceholder?.remove();
+  fitnessGhost.querySelectorAll(".fitness-dnd-badge").forEach((node) => node.remove());
+}
+
+function resetFitnessDragState() {
+  stopFitnessAutoScroll();
+  document.documentElement.classList.remove("is-fitness-dragging");
+  fitnessPointerDragging = false;
   fitnessDragSessionId = null;
-});
+  fitnessDragKind = null;
+  fitnessDragFromId = null;
+  fitnessDragPairId = null;
+  fitnessGhost = null;
+  fitnessPlaceholder = null;
+  fitnessList = null;
+  fitnessDragOffsetY = 0;
+  fitnessDragStartIndex = -1;
+  fitnessDragLastIndex = -1;
+}
 
-app.addEventListener("dragover", (event) => {
-  const card = event.target.closest("[data-exercise-card]");
-  const pairGroup = event.target.closest("[data-pair-group]");
-  if ((!card && !pairGroup) || !fitnessDragFromId) return;
+function abortFitnessDrag() {
+  restoreFitnessGhostToList();
+  resetFitnessDragState();
+}
+
+function startFitnessGripDrag(event, unit, kind) {
+  const list = unit.closest("[data-fitness-list]");
+  if (!list) return;
   event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-  app.querySelectorAll(".fitness-exercise-card.is-drop-target, .fitness-pair-group.is-drop-target").forEach((el) => {
-    el.classList.remove("is-drop-target");
-  });
-  if (card && card.dataset.exerciseId !== fitnessDragFromId) {
-    card.classList.add("is-drop-target");
-    const joinHint = card.dataset.pairId ? ` into ${card.dataset.pairType || "group"}` : "";
-    announceFitnessDnD(`Drop on ${card.dataset.exerciseName || "exercise"}${joinHint}`);
-  } else if (pairGroup) {
-    pairGroup.classList.add("is-drop-target");
-    announceFitnessDnD(`Drop to join ${pairGroup.dataset.pairType || "group"}`);
-  }
-});
+  const rect = unit.getBoundingClientRect();
+  fitnessPointerDragging = true;
+  fitnessList = list;
+  fitnessGhost = unit;
+  fitnessDragKind = kind;
+  fitnessDragSessionId = kind === "pair" ? unit.dataset.session : unit.dataset.sessionId;
+  fitnessDragPairId = kind === "pair" ? unit.dataset.pairId : null;
+  fitnessDragFromId = kind === "exercise" ? unit.dataset.exerciseId : null;
+  fitnessDragOffsetY = event.clientY - rect.top;
+  fitnessLastClientY = event.clientY;
 
-app.addEventListener("drop", (event) => {
-  const card = event.target.closest("[data-exercise-card]");
-  const pairGroup = event.target.closest("[data-pair-group]");
-  if ((!card && !pairGroup) || !fitnessDragFromId || !fitnessDragSessionId) return;
-  event.preventDefault();
-  app.querySelectorAll(".fitness-exercise-card.is-drop-target, .fitness-exercise-card.is-dragging, .fitness-pair-group.is-drop-target").forEach((el) => {
-    el.classList.remove("is-drop-target", "is-dragging");
-  });
+  const placeholder = document.createElement("div");
+  placeholder.className = "fitness-drag-placeholder";
+  placeholder.style.height = `${rect.height}px`;
+  placeholder.setAttribute("aria-hidden", "true");
+  fitnessPlaceholder = placeholder;
+  list.insertBefore(placeholder, unit);
 
-  // Ignore the dragged card itself so drops on group chrome still resolve a target.
-  let toId = card?.dataset.exerciseId === fitnessDragFromId ? "" : card?.dataset.exerciseId || "";
-  if (!toId && pairGroup) {
-    const member = [...pairGroup.querySelectorAll("[data-exercise-card]")].find(
-      (el) => el.dataset.exerciseId && el.dataset.exerciseId !== fitnessDragFromId
-    );
-    toId = member?.dataset.exerciseId || "";
+  unit.classList.add("fitness-drag-ghost");
+  unit.style.position = "fixed";
+  unit.style.left = `${rect.left}px`;
+  unit.style.width = `${rect.width}px`;
+  unit.style.top = `${rect.top}px`;
+  unit.style.zIndex = "80";
+  unit.style.margin = "0";
+  unit.style.pointerEvents = "none";
+
+  const unitsBeforeLift = [...list.children].filter(
+    (el) => el !== placeholder && el.matches?.("[data-exercise-card], [data-pair-group]")
+  );
+  fitnessDragStartIndex = Math.max(0, unitsBeforeLift.indexOf(unit));
+  if (fitnessDragStartIndex < 0) fitnessDragStartIndex = 0;
+  fitnessDragLastIndex = fitnessDragStartIndex;
+  document.documentElement.classList.add("is-fitness-dragging");
+  try {
+    unit.setPointerCapture?.(event.pointerId);
+  } catch {
+    /* ignore */
   }
-  const forcePair =
-    pairGroup?.dataset.pairId
-      ? { pairId: pairGroup.dataset.pairId, pairType: pairGroup.dataset.pairType || "superset" }
-      : null;
-  const name = card?.dataset.exerciseName || pairGroup?.dataset.pairType || "group";
-  if (toId && toId !== fitnessDragFromId) {
-    const ok = reorderFitnessExercise(fitnessDragSessionId, fitnessDragFromId, toId, {
-      joinPair: true,
-      forcePair,
+  hapticCheck();
+  const label =
+    kind === "pair" ? unit.dataset.pairType || "group" : unit.dataset.exerciseName || "exercise";
+  announceFitnessDnD(`Picked up ${label}. Drag to reorder.`);
+  positionFitnessGhost(event.clientY);
+  updateFitnessDragBadge(fitnessDragStartIndex, fitnessDragStartIndex, unitsBeforeLift.length);
+}
+
+function finishFitnessGripDrop() {
+  if (!fitnessPointerDragging || !fitnessDragSessionId) {
+    abortFitnessDrag();
+    return;
+  }
+  const sessionId = fitnessDragSessionId;
+  const snapshot = cloneSessionExercises(sessionId);
+  const keys = collectFitnessUnitKeys();
+  const toIndex = fitnessPlaceholderIndex();
+  restoreFitnessGhostToList();
+  resetFitnessDragState();
+  fitnessSuppressClick = true;
+  setTimeout(() => {
+    fitnessSuppressClick = false;
+  }, 320);
+
+  if (!keys.length) {
+    announceFitnessDnD("Reorder cancelled");
+    return;
+  }
+  const ok = reorderFitnessUnits(sessionId, keys);
+  if (ok && snapshot) {
+    if (fitnessUndoTimer) {
+      clearTimeout(fitnessUndoTimer);
+      fitnessUndoTimer = null;
+    }
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    setUi({
+      fitnessUndo: { sessionId, exercises: snapshot },
+      toast: { message: "Exercise order updated", action: "fitness-undo" },
     });
-    const joined = Boolean(forcePair || card?.dataset.pairId);
-    announceFitnessDnD(ok ? (joined ? `Joined group near ${name}` : `Moved before ${name}`) : "Reorder cancelled");
-    if (ok) showToast(joined ? "Added to group" : "Exercise order updated");
+    fitnessUndoTimer = setTimeout(() => {
+      setUi({ fitnessUndo: null, toast: null });
+      fitnessUndoTimer = null;
+    }, 8000);
+    announceFitnessDnD(`Moved to position ${toIndex + 1}`);
   } else {
     announceFitnessDnD("Reorder cancelled");
   }
-  fitnessDragFromId = null;
-  fitnessDragSessionId = null;
+}
+
+function offerFitnessUndo(sessionId, label) {
+  if (!sessionId) return;
+  const exercises = cloneSessionExercises(sessionId);
+  if (!exercises) return;
+  if (fitnessUndoTimer) {
+    clearTimeout(fitnessUndoTimer);
+    fitnessUndoTimer = null;
+  }
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  setUi({
+    fitnessUndo: { sessionId, exercises },
+    toast: { message: label || "Done", action: "fitness-undo" },
+  });
+  fitnessUndoTimer = setTimeout(() => {
+    setUi({ fitnessUndo: null, toast: null });
+    fitnessUndoTimer = null;
+  }, 8000);
+}
+
+app.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (event.button != null && event.button !== 0) return;
+    if (fitnessPointerDragging) return;
+    const pairGrip = event.target.closest?.("[data-long-press-drag-pair]");
+    const cardGrip = event.target.closest?.("[data-long-press-drag-handle]");
+    if (pairGrip) {
+      const pairGroup = pairGrip.closest("[data-pair-group]");
+      if (pairGroup) startFitnessGripDrag(event, pairGroup, "pair");
+      return;
+    }
+    if (cardGrip) {
+      const card = cardGrip.closest("[data-exercise-card]");
+      if (card) startFitnessGripDrag(event, card, "exercise");
+    }
+  },
+  { passive: false }
+);
+
+app.addEventListener(
+  "pointermove",
+  (event) => {
+    if (!fitnessPointerDragging) return;
+    event.preventDefault();
+    tickFitnessDrag(event.clientY);
+  },
+  { passive: false }
+);
+
+app.addEventListener("pointerup", () => {
+  if (fitnessPointerDragging) finishFitnessGripDrop();
 });
+
+app.addEventListener("pointercancel", () => {
+  if (fitnessPointerDragging) abortFitnessDrag();
+});
+
+app.addEventListener(
+  "click",
+  (event) => {
+    if (!fitnessSuppressClick) return;
+    if (event.target.closest("[data-exercise-card], [data-pair-group]")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  },
+  true
+);
 
 app.addEventListener("submit", (event) => {
   const form = event.target.closest("[data-action]");
@@ -2343,6 +2898,7 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "save-block") {
+    if (!isSaveBlockEnabled(form, ui.editingBlock)) return;
     const day = Number(form.day.value);
     const date = form.date.value;
     const mode = form.mode.value || "template";
@@ -2387,15 +2943,19 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "welcome-name") {
-    const name = form.displayName.value.trim();
+    const name = form.displayName.value.trim().slice(0, 24);
     if (!name) return;
-    setUi({ welcomeStep: 2, welcomeName: name, modal: "welcome" });
+    setUi({ welcomeStep: 2, welcomeName: name, welcomeFocus: null, modal: "welcome" });
     return;
   }
 
   if (form.dataset.action === "welcome-focus") {
-    const name = form.displayName.value.trim();
-    const focus = form.focus.value || "both";
+    const name = form.displayName.value.trim().slice(0, 24);
+    const focus = form.focus?.value || ui.welcomeFocus;
+    if (!focus) {
+      showToast("Pick a starting lane");
+      return;
+    }
     const modulesFromFocus = {
       fitness: focus === "fitness" || focus === "both",
       money: false,
@@ -2412,8 +2972,8 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "welcome-mode") {
-    const name = form.displayName.value.trim();
-    const focus = form.focus.value || "both";
+    const name = form.displayName.value.trim().slice(0, 24);
+    const focus = form.focus?.value || ui.welcomeFocus || "both";
     const appMode = form.appMode.value === "full" ? "full" : "simple";
     completeWelcome(name, focus, appMode);
     setUi({
@@ -2440,8 +3000,7 @@ app.addEventListener("submit", (event) => {
     if (password === PREMIUM_TEST_PASSWORD) {
       setPremiumUnlocked(true);
       clearModalState();
-      setUi({ hustleView: "hustle" });
-      showToast("Premium unlocked");
+      showToast("Command center beta on");
     } else {
       setUi({ premiumError: "Wrong password. Try again." });
     }
@@ -2518,6 +3077,7 @@ applyTheme(getStoredTheme(), { force: true });
 inject();
 loadState();
 if (state?.settings?.theme) applyTheme(state.settings.theme, { force: true });
+applyTextSize(state?.settings?.textSize || "default", { force: true });
 resetToTodayUi();
 setUi({
   tab: "today",
@@ -2533,10 +3093,14 @@ render();
 setInterval(() => {
   const onFitness = ui.tab === "freelance" && (ui.hustleView || "fitness") === "fitness";
   const timer = ui.restTimer;
+  if (timer?.phase === "done") {
+    if (Date.now() >= (timer.doneUntil || 0)) setUi({ restTimer: null });
+    return;
+  }
   if (timer?.endsAt) {
     if (Date.now() >= timer.endsAt) {
-      setUi({ restTimer: null });
-      showToast("Rest done. Next set.");
+      playRestChime();
+      setUi({ restTimer: { phase: "done", doneUntil: Date.now() + 4000 } });
       return;
     }
     if (onFitness) patchRestTimerBar();
@@ -2546,6 +3110,20 @@ setInterval(() => {
     if (running) patchSessionTimerClock(app, state);
   }
 }, 1000);
+
+function syncKeyboardInset() {
+  const vv = window.visualViewport;
+  if (!vv) {
+    document.documentElement.style.setProperty("--keyboard-inset", "0px");
+    return;
+  }
+  const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.documentElement.style.setProperty("--keyboard-inset", `${Math.round(inset)}px`);
+}
+syncKeyboardInset();
+window.visualViewport?.addEventListener("resize", syncKeyboardInset);
+window.visualViewport?.addEventListener("scroll", syncKeyboardInset);
+window.addEventListener("resize", syncKeyboardInset);
 
 /** Sunday weekly share nudge when streak ≥ 7. */
 (function maybeWeeklySharePrompt() {
@@ -2690,10 +3268,11 @@ app.addEventListener("keydown", (event) => {
     const el = ensureCard();
     const label = row.dataset.previewLabel || row.querySelector(".hybrid-label")?.textContent || "Block";
     const time = row.dataset.previewTime || "";
-    const tags = row.dataset.previewTags || "";
+    const tags = String(row.dataset.previewTags || "").trim();
     const soft = row.dataset.previewSoft === "1";
-    const details = row.dataset.previewDetails || "";
-    const metaBits = [time, soft ? "Soft" : "Core", tags].filter(Boolean);
+    const details = String(row.dataset.previewDetails || "").trim();
+    const metaBits = [time, soft ? "Soft" : "Core"];
+    if (tags && tags !== "[object Object]") metaBits.push(tags);
     el.innerHTML = `
       <p class="hybrid-preview-title">${escapeText(label)}</p>
       <p class="hybrid-preview-meta">${escapeText(metaBits.join(" · "))}</p>

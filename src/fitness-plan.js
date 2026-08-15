@@ -9,6 +9,7 @@ import {
   musclesHitRecently,
   suggestedNextLoad,
   restSecondsForGoal,
+  isCompoundLift,
 } from "./fitness.js";
 
 /** Legacy level floors — duration is the primary driver now. */
@@ -216,12 +217,7 @@ function equipmentMatch(exEquipment = [], available = []) {
 }
 
 function isCompound(ex) {
-  const name = String(ex.name || "");
-  const eq = ex.equipment || [];
-  if (AXIAL_LOAD_NAMES.test(name)) return true;
-  if (eq.includes("barbell") && /press|row|squat|deadlift/i.test(name)) return true;
-  if (/pull-up|chin-up|dip|push-up/i.test(name)) return true;
-  return false;
+  return isCompoundLift(ex);
 }
 
 function isAxialHeavy(ex) {
@@ -465,6 +461,7 @@ export function generateWorkoutPlan({
   sessionMinutes = 60,
   bodyWeight = null,
   preferredUnit = "lb",
+  focusExercise = null,
   limitPerGroup,
   maxExercises,
 } = {}) {
@@ -491,7 +488,7 @@ export function generateWorkoutPlan({
   const ctx = { equipment, blockedSet, log, hit, goalCfg };
 
   const buildPick = (ex) => {
-    const overload = suggestedNextLoad(log, ex.name);
+    const overload = suggestedNextLoad(log, ex.name, preferredUnit, goal, focusExercise);
     const compound = isCompound(ex);
     const reps = repsBiasForBw(
       {
