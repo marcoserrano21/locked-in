@@ -732,6 +732,12 @@ body {
     outline-offset: 2px;
   }
 
+  .fitness-set-row.is-timed {
+    background: color-mix(in srgb, var(--soft) 8%, transparent);
+    border-radius: 10px;
+    padding: 0.2rem;
+  }
+
   .fitness-set-row.is-done {
     opacity: 0.55;
     box-shadow: inset 3px 0 0 var(--build);
@@ -2657,6 +2663,48 @@ body {
     border-radius: 1rem;
     background: var(--bg-elev);
     cursor: pointer;
+  }
+
+  .exercise-pick-section + .exercise-pick-section {
+    margin-top: 1rem;
+  }
+
+  .exercise-section-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+
+  .exercise-empty-card {
+    padding: 1rem;
+    border: 1px dashed var(--border);
+    border-radius: 1rem;
+    background: var(--bg-elev);
+    text-align: center;
+  }
+
+  .add-exercise-modal {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .add-exercise-modal .input {
+    min-height: 3rem;
+  }
+
+  @media (max-width: 380px) {
+    .add-exercise-modal {
+      padding: 1rem;
+    }
+
+    .exercise-pick-row {
+      gap: 0.5rem;
+      min-height: 4.75rem;
+      padding: 0.65rem;
+    }
   }
 
   .exercise-menu-backdrop {

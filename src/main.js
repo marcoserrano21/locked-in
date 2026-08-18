@@ -83,9 +83,10 @@ import {
   activeSessionForDate,
   canCompleteWorkout,
   defaultFitnessSettings,
-  normalizeMuscleGroup,
   PPL_PRESETS,
   UL_PRESETS,
+  CALISTHENICS_PRESETS,
+  HIIT_PRESETS,
   restSecondsForGoal,
   shouldAutoStartRest,
   normalizeFocusExercise,
@@ -169,49 +170,37 @@ function showToast(message) {
   }, 2200);
 }
 
-function planGroupsFromSession(session, fallbackGroups = []) {
-  const fromSession = [
-    ...new Set(
-      (session?.exercises || [])
-        .map((ex) => normalizeMuscleGroup(ex.muscleGroup))
-        .filter(Boolean)
-    ),
-  ];
-  if (fromSession.length) return fromSession;
-  return [...new Set((fallbackGroups || []).map(normalizeMuscleGroup).filter(Boolean))];
+function focusExerciseSearch() {
+  requestAnimationFrame(() => {
+    document.getElementById("add-exercise-search")?.focus({ preventScroll: true });
+  });
 }
 
-/** Live-regen active session when level/equipment/setup changes. */
-function maybeRegenActiveWorkoutPlan({ toastLabel } = {}) {
-  const settings = state.fitnessSettings || defaultFitnessSettings();
-  if (!settings.prefsCaptured) return false;
-  const session = activeSessionForDate(state.fitnessLog);
-  if (!session?.id || session.completedAt) return false;
-  const groups = planGroupsFromSession(session, ui.selectedMuscleGroups || []);
-  if (!groups.length) {
-    showToast("Rebuild from Build workout");
-    return false;
+function exerciseHasLoggedSets(sessionId, exerciseId) {
+  const session = (state.fitnessLog || []).find((item) => item.id === sessionId);
+  const exercise = (session?.exercises || []).find((item) => item.id === exerciseId);
+  return (exercise?.sets || []).some((set) => set.done);
+}
+
+function confirmExerciseReplace(sessionId, exerciseId) {
+  if (!exerciseHasLoggedSets(sessionId, exerciseId)) return true;
+  return window.confirm(
+    "Replace this exercise? Its completed sets will be cleared. The rest of today's session stays unchanged."
+  );
+}
+
+function addCustomExerciseFromSearch(sessionId, name) {
+  const trimmed = String(name || "").trim();
+  if (!sessionId || !trimmed) return false;
+  const replacing = ui.replaceExercise;
+  if (replacing?.sessionId && replacing?.exerciseId) {
+    if (!confirmExerciseReplace(replacing.sessionId, replacing.exerciseId)) return false;
+    replaceExerciseInSession(replacing.sessionId, replacing.exerciseId, trimmed);
+  } else {
+    addExerciseToSession(sessionId, trimmed);
   }
-  const plan = generateWorkoutPlan({
-    selectedGroups: groups,
-    equipment: settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable,
-    log: state.fitnessLog || [],
-    blocked: settings.blockedExercises || [],
-    experienceLevel: settings.experienceLevel || "beginner",
-    goal: settings.goal || "build_muscle",
-    trainWhy: settings.trainWhy || [],
-    splitType: settings.splitType || "ppl",
-    gymDaysPerWeek: settings.gymDaysPerWeek || 4,
-    sessionMinutes: settings.sessionMinutes || 60,
-    bodyWeight: settings.bodyWeight,
-    preferredUnit: settings.preferredUnit || "lb",
-    focusExercise: settings.focusExercise || null,
-  });
-  replaceSessionExercises(session.id, plan);
-  const nextFocus = resolveFocusFromPlan(plan, settings.focusExercise);
-  patchFitnessSettings({ focusExercise: nextFocus });
-  const level = settings.experienceLevel || "beginner";
-  showToast(toastLabel || `Plan updated for ${level}`);
+  clearModalState();
+  showToast(replacing ? "Exercise replaced" : "Exercise added");
   return true;
 }
 
@@ -630,6 +619,7 @@ function clearModalState() {
     fitnessSearch: "",
     fitnessMuscle: "all",
     fitnessListFilter: "all",
+    fitnessEquipmentFilter: null,
     viewingWorkoutId: null,
     shiftSheetType: null,
     replaceExercise: null,
@@ -943,8 +933,7 @@ app.addEventListener("click", (event) => {
     patchFitnessSettings({ prefsCaptured: true, restSeconds });
     if (ui.fitnessPrefsMode === "edit") {
       setUi({ modal: null });
-      const regenerated = maybeRegenActiveWorkoutPlan({ toastLabel: "Training setup saved · plan updated" });
-      if (!regenerated) showToast("Training setup saved");
+      showToast("Training setup saved · active workout kept");
       return;
     }
     setUi({
@@ -962,7 +951,10 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "set-split-type") {
-    patchFitnessSettings({ splitType: t.dataset.split === "ul" ? "ul" : "ppl" });
+    const split = ["ppl", "ul", "calisthenics", "hiit"].includes(t.dataset.split)
+      ? t.dataset.split
+      : "ppl";
+    patchFitnessSettings({ splitType: split });
     return;
   }
 
@@ -1027,8 +1019,17 @@ app.addEventListener("click", (event) => {
   if (action === "workout-builder-preset") {
     const preset = t.dataset.preset || "custom";
     const settings = state.fitnessSettings || defaultFitnessSettings();
-    const split = settings.splitType === "ul" ? "ul" : "ppl";
-    const map = split === "ul" ? UL_PRESETS : PPL_PRESETS;
+    const split = ["ppl", "ul", "calisthenics", "hiit"].includes(settings.splitType)
+      ? settings.splitType
+      : "ppl";
+    const map =
+      split === "ul"
+        ? UL_PRESETS
+        : split === "calisthenics"
+          ? CALISTHENICS_PRESETS
+          : split === "hiit"
+            ? HIIT_PRESETS
+            : PPL_PRESETS;
     const groups = preset === "custom" ? ui.selectedMuscleGroups || [] : [...(map[preset] || [])];
     setUi({ workoutBuilderPreset: preset, selectedMuscleGroups: groups });
     if (preset === "custom") {
@@ -1081,6 +1082,8 @@ app.addEventListener("click", (event) => {
       (rebuildId && (state.fitnessLog || []).find((w) => w.id === rebuildId && !w.completedAt)) ||
       activeSessionForDate(state.fitnessLog);
     if (existing?.id) {
+      const hasLoggedWork = (existing.exercises || []).some((ex) => (ex.sets || []).some((set) => set.done));
+      if (hasLoggedWork && !window.confirm("Replace today's workout plan? Completed exercise logs will be cleared.")) return;
       replaceSessionExercises(existing.id, plan);
     } else {
       startWorkout();
@@ -1091,6 +1094,8 @@ app.addEventListener("click", (event) => {
             sets: ex.sets,
             reps: ex.reps,
             weight: ex.weight,
+            duration: ex.duration,
+            measurement: ex.measurement,
             pairId: ex.pairId,
             pairType: ex.pairType,
             role: ex.role,
@@ -1112,29 +1117,35 @@ app.addEventListener("click", (event) => {
   if (action === "open-add-exercise-empty") {
     startWorkout();
     const session = activeSessionForDate(state.fitnessLog);
+    const settings = state.fitnessSettings || defaultFitnessSettings();
     setUi({
       modal: "add-exercise",
       fitnessAddSession: session?.id || "",
       fitnessSearch: "",
       fitnessMuscle: "all",
       fitnessListFilter: "all",
+      fitnessEquipmentFilter: [...(settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable)],
       replaceExercise: null,
       selectedMuscleGroups: [],
     });
+    focusExerciseSearch();
     return;
   }
 
   if (action === "open-add-exercise") {
+    const settings = state.fitnessSettings || defaultFitnessSettings();
     setUi({
       modal: "add-exercise",
       fitnessAddSession: t.dataset.session,
       fitnessSearch: "",
       fitnessMuscle: "all",
       fitnessListFilter: "all",
+      fitnessEquipmentFilter: [...(settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable)],
       replaceExercise: null,
       fitnessAddPairId: t.dataset.pairId || null,
       fitnessAddPairType: t.dataset.pairType || null,
     });
+    focusExerciseSearch();
     return;
   }
 
@@ -1183,10 +1194,16 @@ app.addEventListener("click", (event) => {
   if (action === "replace-pick-exercise") {
     const target = ui.replaceExercise;
     if (target?.sessionId && target?.exerciseId) {
+      if (!confirmExerciseReplace(target.sessionId, target.exerciseId)) return;
       replaceExerciseInSession(target.sessionId, target.exerciseId, t.dataset.name, t.dataset.muscle || "");
       clearModalState();
       showToast("Exercise replaced");
     }
+    return;
+  }
+
+  if (action === "add-search-custom-exercise") {
+    addCustomExerciseFromSearch(t.dataset.session, t.dataset.name);
     return;
   }
 
@@ -1216,6 +1233,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "exercise-menu-replace") {
+    const settings = state.fitnessSettings || defaultFitnessSettings();
     setUi({
       openExerciseMenu: null,
       modal: "add-exercise",
@@ -1223,7 +1241,9 @@ app.addEventListener("click", (event) => {
       replaceExercise: { sessionId: t.dataset.session, exerciseId: t.dataset.exercise },
       fitnessSearch: "",
       fitnessMuscle: "all",
+      fitnessEquipmentFilter: [...(settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable)],
     });
+    focusExerciseSearch();
     return;
   }
 
@@ -1299,12 +1319,25 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "toggle-equipment") {
-    const removed = toggleEquipment(t.dataset.id);
-    if (removed > 0) showToast(`${removed} exercise${removed === 1 ? "" : "s"} removed. No matching equipment`);
-    const settings = state.fitnessSettings || defaultFitnessSettings();
-    if (settings.prefsCaptured && activeSessionForDate(state.fitnessLog)?.exercises?.length) {
-      maybeRegenActiveWorkoutPlan({ toastLabel: "Plan updated for equipment" });
+    const affected = toggleEquipment(t.dataset.id);
+    if (affected > 0) {
+      showToast(`${affected} active exercise${affected === 1 ? "" : "s"} kept. New plans will use updated gear.`);
+    } else {
+      showToast("Equipment updated");
     }
+    return;
+  }
+
+  if (action === "toggle-picker-equipment") {
+    const key = String(t.dataset.id || "");
+    if (!key) return;
+    const settings = state.fitnessSettings || defaultFitnessSettings();
+    const current = ui.fitnessEquipmentFilter || settings.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
+    const fitnessEquipmentFilter = current.includes(key)
+      ? current.filter((id) => id !== key)
+      : [...current, key];
+    preferAddExerciseSearchPatch = true;
+    setUi({ fitnessEquipmentFilter });
     return;
   }
 
@@ -1488,6 +1521,45 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "welcome-fitness-goal") {
+    setUi({ welcomeFitnessGoal: t.dataset.goal || null });
+    return;
+  }
+
+  if (action === "welcome-fitness-style") {
+    setUi({ welcomeFitnessStyle: t.dataset.style || null });
+    return;
+  }
+
+  if (action === "welcome-fitness-level") {
+    setUi({ welcomeFitnessLevel: t.dataset.level || null });
+    return;
+  }
+
+  if (action === "welcome-fitness-equipment") {
+    const key = String(t.dataset.id || "");
+    if (!key) return;
+    const current = Array.isArray(ui.welcomeEquipment)
+      ? ui.welcomeEquipment
+      : defaultFitnessSettings().equipmentAvailable;
+    const next = current.includes(key) ? current.filter((id) => id !== key) : [...current, key];
+    setUi({ welcomeEquipment: next });
+    return;
+  }
+
+  if (action === "welcome-train-why") {
+    const key = String(t.dataset.why || "");
+    if (!key) return;
+    const current = Array.isArray(ui.welcomeTrainWhy) ? ui.welcomeTrainWhy : [];
+    const next = current.includes(key)
+      ? current.filter((id) => id !== key)
+      : current.length >= 3
+        ? current
+        : [...current, key];
+    setUi({ welcomeTrainWhy: next });
+    return;
+  }
+
   if (action === "welcome-back") {
     const step = Number(t.dataset.step) || Math.max(1, (ui.welcomeStep || 1) - 1);
     setUi({ welcomeStep: step });
@@ -1533,14 +1605,30 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "welcome-finish") {
+    const focus = ui.welcomeFocus || state.settings?.welcomeFocus || "both";
     finishOnboarding({
       displayName: ui.welcomeName || state.settings?.displayName,
-      focus: ui.welcomeFocus || "both",
+      focus,
       appMode: ui.welcomeAppMode || state.settings?.appMode || "simple",
       buildDays: ui.setupBuildDays || [0, 1, 2],
       blockPreset: ui.setupBlockPreset || "morning",
       challengeLength: ui.welcomeChallengeLength || state.settings?.challengeLength || 30,
     });
+    if (focus === "fitness" || focus === "both") {
+      const defaults = defaultFitnessSettings();
+      patchFitnessSettings({
+        goal: ui.welcomeFitnessGoal || defaults.goal,
+        splitType: ui.welcomeFitnessStyle || defaults.splitType,
+        experienceLevel: ui.welcomeFitnessLevel || defaults.experienceLevel,
+        equipmentAvailable:
+          Array.isArray(ui.welcomeEquipment) && ui.welcomeEquipment.length
+            ? ui.welcomeEquipment
+            : defaults.equipmentAvailable,
+        trainWhy: Array.isArray(ui.welcomeTrainWhy) ? ui.welcomeTrainWhy.slice(0, 3) : defaults.trainWhy,
+        prefsCaptured: true,
+        restSeconds: restSecondsForGoal(ui.welcomeFitnessGoal || defaults.goal || "build_muscle"),
+      });
+    }
     showToast(`Welcome, ${String(ui.welcomeName || "friend").split(" ")[0]}`);
     return;
   }
@@ -1787,7 +1875,7 @@ app.addEventListener("click", (event) => {
   if (action === "set-fitness-level") {
     const level = t.dataset.level || "beginner";
     patchFitnessSettings({ experienceLevel: level });
-    maybeRegenActiveWorkoutPlan({ toastLabel: `Plan updated for ${level}` });
+    showToast(`Level saved · ${level}`);
     return;
   }
 
@@ -2975,9 +3063,10 @@ app.addEventListener("submit", (event) => {
     const name = form.displayName.value.trim().slice(0, 24);
     const focus = form.focus?.value || ui.welcomeFocus || "both";
     const appMode = form.appMode.value === "full" ? "full" : "simple";
+    const hasCoach = focus === "fitness" || focus === "both";
     completeWelcome(name, focus, appMode);
     setUi({
-      welcomeStep: 5,
+      welcomeStep: hasCoach ? 6 : 5,
       welcomeName: name,
       welcomeFocus: focus,
       welcomeAppMode: appMode,
@@ -3060,16 +3149,7 @@ app.addEventListener("submit", (event) => {
 
   if (form.dataset.action === "custom-exercise") {
     const sessionId = form.sessionId.value;
-    const name = form.name.value.trim();
-    if (!sessionId || !name) return;
-    const replacing = ui.replaceExercise;
-    if (replacing?.sessionId && replacing?.exerciseId) {
-      replaceExerciseInSession(replacing.sessionId, replacing.exerciseId, name);
-    } else {
-      addExerciseToSession(sessionId, name);
-    }
-    clearModalState();
-    showToast(replacing ? "Exercise replaced" : "Exercise added");
+    addCustomExerciseFromSearch(sessionId, form.name.value);
   }
 });
 

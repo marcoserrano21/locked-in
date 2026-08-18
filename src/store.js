@@ -1231,16 +1231,19 @@ export function addExerciseToSession(sessionId, name, muscleGroup = "", planMeta
     );
     const reps = planMeta.reps != null ? Number(planMeta.reps) : hint.reps;
     const weight = planMeta.weight != null ? Number(planMeta.weight) : hint.weight;
+    const duration = planMeta.duration != null ? Number(planMeta.duration) : hint.duration;
     const seed = {
       ...hint,
       reps: Number.isFinite(reps) ? reps : hint.reps,
       weight: Number.isFinite(weight) ? weight : hint.weight,
+      duration: Number.isFinite(duration) ? duration : hint.duration,
     };
     const seeded = makeExercise(trimmed, group, unitPref, seed, {
       sets: planMeta.sets,
       pairId: planMeta.pairId,
       pairType: planMeta.pairType,
       role: planMeta.role,
+      measurement: planMeta.measurement || catalog?.measurement,
       restSeconds: planMeta.restSeconds ?? hint.restSeconds,
     });
     return {
@@ -1273,15 +1276,18 @@ export function replaceSessionExercises(sessionId, plan = []) {
       );
       const reps = ex.reps != null ? Number(ex.reps) : hint.reps;
       const weight = ex.weight != null ? Number(ex.weight) : hint.weight;
+      const duration = ex.duration != null ? Number(ex.duration) : hint.duration;
       return makeExercise(ex.name, ex.muscleGroup || "", unitPref, {
         ...hint,
         reps: Number.isFinite(reps) ? reps : hint.reps,
         weight: Number.isFinite(weight) ? weight : hint.weight,
+        duration: Number.isFinite(duration) ? duration : hint.duration,
       }, {
         sets: ex.sets,
         pairId: ex.pairId,
         pairType: ex.pairType,
         role: ex.role,
+        measurement: ex.measurement,
         restSeconds: ex.restSeconds ?? hint.restSeconds,
       });
     });
@@ -1347,7 +1353,12 @@ export function addFitnessSet(sessionId, exerciseId) {
             s.fitnessSettings?.focusExercise
           );
           const seed = last
-            ? { weight: Number(last.weight) || 0, reps: Number(last.reps) || hint.reps || 8, unit: last.unit || unit }
+            ? {
+                weight: Number(last.weight) || 0,
+                reps: Number(last.reps) || hint.reps || 8,
+                duration: last.duration != null ? Number(last.duration) || hint.duration : hint.duration,
+                unit: last.unit || unit,
+              }
             : hint;
           return {
             ...ex,
@@ -1755,33 +1766,22 @@ export function setEquipmentAvailable(list) {
 export function toggleEquipment(id) {
   const key = String(id || "").trim();
   if (!key) return 0;
-  let removed = 0;
+  let affected = 0;
   patchState((s) => {
     const current = s.fitnessSettings?.equipmentAvailable || defaultFitnessSettings().equipmentAvailable;
     const has = current.includes(key);
     const equipmentAvailable = has ? current.filter((x) => x !== key) : [...current, key];
     const available = new Set(equipmentAvailable);
     const date = todayKey();
-    const log = s.fitnessLog || [];
-    const session = log.find((w) => w.date === date && !w.completedAt);
-    let nextLog = log;
+    const session = (s.fitnessLog || []).find((w) => w.date === date && !w.completedAt);
     if (session?.exercises?.length) {
-      const kept = [];
-      for (const ex of session.exercises) {
-        const cat = findExerciseCatalog(ex.name);
-        const eq = cat?.equipment || [];
-        if (!eq.length || eq.some((e) => available.has(e))) kept.push(ex);
-        else removed += 1;
-      }
-      if (removed) {
-        nextLog = log.map((w) =>
-          w.id === session.id ? { ...w, exercises: kept } : w
-        );
-      }
+      affected = session.exercises.filter((ex) => {
+        const eq = findExerciseCatalog(ex.name)?.equipment || [];
+        return eq.length && !eq.some((item) => available.has(item));
+      }).length;
     }
     return {
       ...s,
-      fitnessLog: nextLog,
       fitnessSettings: {
         ...defaultFitnessSettings(),
         ...s.fitnessSettings,
@@ -1789,7 +1789,7 @@ export function toggleEquipment(id) {
       },
     };
   });
-  return removed;
+  return affected;
 }
 
 export function blockExercise(name) {
@@ -1866,9 +1866,16 @@ export function replaceExerciseInSession(sessionId, exerciseId, name, muscleGrou
         recentExercises: touchRecentExercise(s.fitnessSettings, trimmed),
       },
       fitnessLog: mapFitnessLog(s.fitnessLog, sessionId, (session) =>
-        mapExercise(session, exerciseId, () =>
-          makeExercise(trimmed, group, unitPref, hint, { restSeconds: hint.restSeconds })
-        )
+        mapExercise(session, exerciseId, (current) => {
+          const next = makeExercise(trimmed, group, unitPref, hint, {
+            sets: (current.sets || []).length || 3,
+            pairId: current.pairId,
+            pairType: current.pairType,
+            measurement: catalog?.measurement,
+            restSeconds: hint.restSeconds ?? current.restSeconds,
+          });
+          return { ...next, id: current.id };
+        })
       ),
     };
   });

@@ -23,7 +23,9 @@ export function renderFitnessPrefsModal(ui, state) {
   const showWeight = settings.prefsCaptured || settings.bodyWeightEntered;
   const bodyWeight = showWeight && Number.isFinite(rawWeight) && rawWeight > 0 ? rawWeight : "";
   const available = new Set(settings.equipmentAvailable || []);
-  const splitType = settings.splitType === "ul" ? "ul" : "ppl";
+  const splitType = ["ppl", "ul", "calisthenics", "hiit"].includes(settings.splitType)
+    ? settings.splitType
+    : "ppl";
   const gymDays = Number(settings.gymDaysPerWeek) || 4;
   const sessionMinutes = [30, 45, 60, 90].includes(Number(settings.sessionMinutes))
     ? Number(settings.sessionMinutes)
@@ -127,11 +129,14 @@ export function renderFitnessPrefsModal(ui, state) {
           </div>
 
           <div>
-            <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Split</p>
-            <div class="segment" role="group" aria-label="Training split">
-              <button type="button" class="segment-btn ${splitType === "ppl" ? "is-active accent" : ""}" data-action="set-split-type" data-split="ppl">Push / Pull / Legs</button>
+            <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Training style</p>
+            <div class="segment" role="group" aria-label="Training style">
+              <button type="button" class="segment-btn ${splitType === "ppl" ? "is-active accent" : ""}" data-action="set-split-type" data-split="ppl">PPL</button>
               <button type="button" class="segment-btn ${splitType === "ul" ? "is-active accent" : ""}" data-action="set-split-type" data-split="ul">Upper / Lower</button>
+              <button type="button" class="segment-btn ${splitType === "calisthenics" ? "is-active accent" : ""}" data-action="set-split-type" data-split="calisthenics">Calisthenics</button>
+              <button type="button" class="segment-btn ${splitType === "hiit" ? "is-active accent" : ""}" data-action="set-split-type" data-split="hiit">HIIT</button>
             </div>
+            <p class="mt-2 help-text">${splitType === "hiit" ? "Short work intervals, controlled recovery, 3-5 rounds." : splitType === "calisthenics" ? "Bodyweight progressions, rings, and skill work." : "Structured strength split."}</p>
           </div>
 
           <div>

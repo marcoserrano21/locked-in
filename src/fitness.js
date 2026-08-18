@@ -11,6 +11,10 @@ export const EQUIPMENT_OPTIONS = [
   { id: "kettlebell", label: "Kettlebell" },
   { id: "smith", label: "Smith" },
   { id: "bench", label: "Bench" },
+  { id: "band", label: "Band" },
+  { id: "rings", label: "Rings" },
+  { id: "parallettes", label: "Parallettes" },
+  { id: "battle_rope", label: "Battle rope" },
 ];
 
 export const MAIN_MUSCLE_GROUPS = [
@@ -100,6 +104,7 @@ export const FITNESS_GOALS = [
   { id: "longevity", label: "Longevity" },
   { id: "rehab", label: "Rehab" },
   { id: "sport_prep", label: "Sport prep" },
+  { id: "conditioning", label: "HIIT conditioning" },
   { id: "skill", label: "Skill" },
 ];
 
@@ -166,6 +171,7 @@ export function sessionVolume(session, unit = "lb") {
       total +
       sets.reduce((sum, set) => {
         if (!set.done) return sum;
+        if (set.duration != null) return sum;
         const weight = Number(set.weight) || 0;
         const reps = Number(set.reps) || 0;
         if (set.unit && set.unit !== unit) return sum + weight * reps;
@@ -450,6 +456,7 @@ export function lastWorkingSet(log = [], exerciseName) {
       return {
         weight: Number(last.weight) || 0,
         reps: Number(last.reps) || 8,
+        duration: last.duration != null ? Number(last.duration) || 0 : undefined,
         unit: last.unit || "lb",
         date: session.date,
         allHit,
@@ -551,6 +558,8 @@ export function filterExercises(query = "", muscleGroup = "all", opts = {}) {
       nameKey.includes(q) ||
       exGroup.includes(q) ||
       muscleLabel(exGroup).toLowerCase().includes(q) ||
+      String(ex.category || "").toLowerCase().includes(q) ||
+      String(ex.measurement || "").toLowerCase().includes(q) ||
       (ex.equipment || []).some((e) => e.includes(q))
     );
   });
@@ -648,9 +657,32 @@ export function resolveFocusFromPlan(plan = [], previousFocus = null) {
   };
 }
 
+export function isTimedExercise(exercise = {}) {
+  const catalog = findExerciseCatalog(exercise.name) || {};
+  return (
+    exercise.measurement === "time" ||
+    catalog.measurement === "time" ||
+    Number(exercise.defaultDuration) > 0
+  );
+}
+
+export function formatDurationSeconds(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  if (!mins) return `${secs}s`;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
 export function suggestedNextLoad(log, exerciseName, unit = "lb", goal = "build_muscle", focusExercise = null) {
   const prev = lastWorkingSet(log, exerciseName) || previousPerformance(log, exerciseName);
-  if (!prev) return { weight: 0, reps: 8 };
+  if (!prev) {
+    const catalog = findExerciseCatalog(exerciseName);
+    return catalog?.measurement === "time"
+      ? { weight: 0, reps: 0, duration: Number(catalog.defaultDuration) || 30 }
+      : { weight: 0, reps: 8 };
+  }
+  const timed = prev.duration != null || findExerciseCatalog(exerciseName)?.measurement === "time";
   const isBodyweight = Number(prev.weight) === 0;
   const prevReps = Number(prev.reps) || 8;
   const prevWeight = Number(prev.weight) || 0;
@@ -661,6 +693,18 @@ export function suggestedNextLoad(log, exerciseName, unit = "lb", goal = "build_
     focus &&
     String(exerciseName || "").trim().toLowerCase() === String(focus.name).trim().toLowerCase();
   const week = isFocus ? Number(focus.weekIndex) || 1 : 0;
+
+  if (timed) {
+    const prevDuration = Number(prev.duration) || Number(findExerciseCatalog(exerciseName)?.defaultDuration) || 30;
+    const nextDuration = prev.allHit ? Math.min(120, prevDuration + 5) : prevDuration;
+    return {
+      weight: 0,
+      reps: 0,
+      duration: nextDuration,
+      unit: prev.unit || unit,
+      restSeconds: rest,
+    };
+  }
 
   // Focus week 1: establish / repeat successful load (no auto-progression).
   if (isFocus && week === 1) {
@@ -727,6 +771,8 @@ export function restSecondsForGoal(goal = "build_muscle") {
     case "lose_weight":
     case "tone":
       return 45;
+    case "conditioning":
+      return 30;
     case "rehab":
       return 60;
     case "longevity":
@@ -747,6 +793,8 @@ export function restPresetsForGoal(goal = "build_muscle") {
     case "lose_weight":
     case "tone":
       return [30, 45, 60];
+    case "conditioning":
+      return [15, 20, 30];
     case "rehab":
       return [45, 60, 90];
     default:
@@ -765,6 +813,13 @@ export function canCompleteWorkout(session) {
       return { ok: false, reason: `Finish every set on ${ex.name}` };
     }
     for (const set of sets) {
+      if (set.duration != null) {
+        const duration = Number(set.duration);
+        if (!Number.isFinite(duration) || duration <= 0) {
+          return { ok: false, reason: `Set an interval for ${ex.name}` };
+        }
+        continue;
+      }
       const reps = Number(set.reps);
       const weight = Number(set.weight);
       if (!Number.isFinite(reps) || reps <= 0) {
@@ -790,11 +845,24 @@ export const UL_PRESETS = {
   lower: ["quads", "hamstrings", "glutes", "calves", "lower_back", "abs"],
 };
 
+export const CALISTHENICS_PRESETS = {
+  upper: ["chest", "back", "shoulders", "triceps", "abs"],
+  lower: ["quads", "hamstrings", "glutes", "calves", "abs"],
+  full_body: ["chest", "back", "quads", "glutes", "abs"],
+};
+
+export const HIIT_PRESETS = {
+  full_body: ["quads", "chest", "back", "shoulders", "abs"],
+  lower_body: ["quads", "hamstrings", "glutes", "calves"],
+  core_engine: ["abs", "lower_back", "glutes", "shoulders"],
+};
+
 export function makeSet(unit = "lb", overrides = {}) {
   return {
     id: uid("set"),
     reps: overrides.reps != null ? Number(overrides.reps) || 0 : 8,
     weight: overrides.weight != null ? Number(overrides.weight) || 0 : 0,
+    duration: overrides.duration != null ? Number(overrides.duration) || 0 : undefined,
     unit: overrides.unit || unit,
     done: false,
     restSeconds: overrides.restSeconds != null ? Number(overrides.restSeconds) : undefined,
@@ -802,11 +870,27 @@ export function makeSet(unit = "lb", overrides = {}) {
 }
 
 export function makeExercise(name, muscleGroup = "", unit = "lb", setSeed = null, opts = {}) {
+  const catalog = findExerciseCatalog(name);
   const seed = setSeed || { weight: 0, reps: 8, unit };
+  const timed =
+    opts.measurement === "time" ||
+    catalog?.measurement === "time" ||
+    seed.duration != null;
+  const timedSeed = timed
+    ? {
+        ...seed,
+        reps: 0,
+        weight: 0,
+        duration:
+          seed.duration != null
+            ? Number(seed.duration) || 30
+            : Number(catalog?.defaultDuration) || 30,
+      }
+    : seed;
   const setCount = Math.max(1, Number(opts.sets) || 3);
   const restSeconds = opts.restSeconds != null ? Number(opts.restSeconds) : undefined;
   const sets = Array.from({ length: setCount }, () =>
-    makeSet(unit, restSeconds != null ? { ...seed, restSeconds } : seed)
+    makeSet(unit, restSeconds != null ? { ...timedSeed, restSeconds } : timedSeed)
   );
   return {
     id: uid("ex"),
@@ -816,6 +900,7 @@ export function makeExercise(name, muscleGroup = "", unit = "lb", setSeed = null
     pairId: opts.pairId || null,
     pairType: opts.pairType || null,
     role: opts.role || "",
+    measurement: timed ? "time" : undefined,
     restSeconds: restSeconds ?? null,
   };
 }
@@ -900,7 +985,10 @@ export function shouldAutoStartRest(session, exerciseId, setId) {
   const sets = ex.sets || [];
   const set = sets.find((s) => s.id === setId);
   if (!set?.done) return false;
-  const filled = Number(set.reps) > 0 && Number.isFinite(Number(set.weight)) && Number(set.weight) >= 0;
+  const timed = set.duration != null;
+  const filled = timed
+    ? Number(set.duration) > 0
+    : Number(set.reps) > 0 && Number.isFinite(Number(set.weight)) && Number(set.weight) >= 0;
   if (!filled) return false;
   const setIndex = sets.findIndex((s) => s.id === setId);
   if (setIndex < 0) return false;
@@ -916,6 +1004,7 @@ export function shouldAutoStartRest(session, exerciseId, setId) {
   const roundDone = members.every((m) => {
     const row = (m.sets || [])[setIndex];
     if (!row?.done) return false;
+    if (row.duration != null) return Number(row.duration) > 0;
     const reps = Number(row.reps);
     const weight = Number(row.weight);
     return Number.isFinite(reps) && reps > 0 && Number.isFinite(weight) && weight >= 0;
@@ -944,11 +1033,19 @@ export function musclesHitRecently(log = [], withinSessions = 3) {
 export function progressiveOverloadHint(log, exerciseName, unit = "lb", goal = "build_muscle", focusExercise = null) {
   const prev = lastWorkingSet(log, exerciseName) || previousPerformance(log, exerciseName);
   if (!prev) return null;
+  const timed = prev.duration != null || findExerciseCatalog(exerciseName)?.measurement === "time";
   const focus = normalizeFocusExercise(focusExercise);
   const isFocus =
     focus &&
     String(exerciseName || "").trim().toLowerCase() === String(focus.name).trim().toLowerCase();
   const next = suggestedNextLoad(log, exerciseName, unit, goal, focus);
+  if (timed) {
+    const current = formatDurationSeconds(prev.duration || 0);
+    const target = formatDurationSeconds(next.duration || prev.duration || 0);
+    return Number(next.duration) > Number(prev.duration)
+      ? `Try ${target}. Last time: ${current}.`
+      : `Repeat ${target}.`;
+  }
   if (isFocus) {
     const weekHint = focusWeekHint(focus.weekIndex);
     const same =

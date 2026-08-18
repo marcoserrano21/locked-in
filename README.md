@@ -2,6 +2,14 @@
 
 Retention-first personal schedule OS. Next block. Proof over vibes.
 
+## Product at a glance
+
+Marco Locked-In is a mobile-first execution system for people with full lives who need a tool that tells the truth. It turns the day into a clear sequence of high-value blocks, creates a visible streak based on meaningful work, and helps users review progress with evidence instead of vague motivation.
+
+The app is built around one core idea: do the next important block, seal the day, and prove the week.
+
+See [docs/APP_BRIEF.md](docs/APP_BRIEF.md) for the full product brief, positioning, retention model, and AI-rebuild blueprint.
+
 ## Run
 
 ```bash

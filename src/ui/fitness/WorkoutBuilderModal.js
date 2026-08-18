@@ -14,16 +14,43 @@ const UL_PRESETS_UI = [
   { id: "lower", label: "Lower" },
 ];
 
+const CALISTHENICS_PRESETS_UI = [
+  { id: "upper", label: "Upper" },
+  { id: "lower", label: "Lower" },
+  { id: "full_body", label: "Full body" },
+];
+
+const HIIT_PRESETS_UI = [
+  { id: "full_body", label: "Full body" },
+  { id: "lower_body", label: "Lower body" },
+  { id: "core_engine", label: "Core engine" },
+];
+
+function presetsForSplit(splitType) {
+  if (splitType === "ul") return UL_PRESETS_UI;
+  if (splitType === "calisthenics") return CALISTHENICS_PRESETS_UI;
+  if (splitType === "hiit") return HIIT_PRESETS_UI;
+  return PPL_PRESETS_UI;
+}
+
 export function renderWorkoutBuilderModal(ui, state) {
   const selected = ui.selectedMuscleGroups || [];
   const count = selected.length;
   const preset = ui.workoutBuilderPreset || "custom";
   const settings = { ...defaultFitnessSettings(), ...(state.fitnessSettings || {}) };
   const level = settings.experienceLevel || "beginner";
-  const splitType = settings.splitType === "ul" ? "ul" : "ppl";
+  const splitType = ["ppl", "ul", "calisthenics", "hiit"].includes(settings.splitType)
+    ? settings.splitType
+    : "ppl";
   const hint = levelVolumeHint(level, count || 1, splitType, settings.sessionMinutes || 60);
-  const presets = splitType === "ul" ? UL_PRESETS_UI : PPL_PRESETS_UI;
+  const presets = presetsForSplit(splitType);
   const isCustom = preset === "custom";
+  const title = splitType === "hiit" ? "Pick interval zones" : splitType === "calisthenics" ? "Pick calisthenics focus" : "Pick muscles";
+  const subtitle = splitType === "hiit"
+    ? "3-5 rounds · 20-45s work · short controlled recovery."
+    : splitType === "calisthenics"
+      ? "Bodyweight progressions and skill-first strength."
+      : `${hint.label}. Gear and prefs already locked in.`;
 
   return `
     <div class="modal-backdrop modal-enter">
@@ -32,8 +59,8 @@ export function renderWorkoutBuilderModal(ui, state) {
           <button type="button" class="btn !min-h-11 !px-4" data-action="${ui.workoutBuilderFromSetup ? "workout-builder-back" : "close-modal"}">Back</button>
           <button type="button" class="btn !min-h-11 !px-4" data-action="close-modal">Cancel</button>
         </div>
-        <h2 class="display text-[1.75rem] leading-tight mt-4 shrink-0">Pick muscles</h2>
-        <p class="mt-2 text-sm shrink-0" style="color:var(--mute)">${escapeHtml(hint.label)}. Gear and prefs already locked in.</p>
+        <h2 class="display text-[1.75rem] leading-tight mt-4 shrink-0">${title}</h2>
+        <p class="mt-2 text-sm shrink-0" style="color:var(--mute)">${escapeHtml(subtitle)}</p>
 
         <div class="segment mt-4 shrink-0" role="group" aria-label="Workout preset">
           ${presets
