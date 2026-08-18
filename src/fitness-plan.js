@@ -64,6 +64,22 @@ const SLOT_RECIPES = {
     "quads", "hamstrings", "glutes", "calves", "lower_back", "abs", "quads",
     "hamstrings", "glutes", "calves", "quads", "hamstrings", "abs", "glutes",
   ],
+  cali_upper: [
+    "chest", "back", "shoulders", "triceps", "abs", "back", "chest", "shoulders",
+    "triceps", "abs", "back", "chest", "shoulders", "abs",
+  ],
+  cali_lower: [
+    "quads", "glutes", "hamstrings", "calves", "abs", "quads", "glutes", "hamstrings",
+    "calves", "abs", "quads", "glutes", "lower_back", "calves",
+  ],
+  cali_full: [
+    "chest", "back", "quads", "glutes", "shoulders", "abs", "hamstrings", "triceps",
+    "calves", "lower_back", "chest", "back", "quads", "abs",
+  ],
+  hiit: [
+    "quads", "chest", "back", "shoulders", "abs", "glutes", "hamstrings", "calves",
+    "lower_back", "triceps", "quads", "chest", "abs", "shoulders",
+  ],
 };
 
 const GOAL_PRESETS = {
@@ -143,6 +159,15 @@ const GOAL_PRESETS = {
     preferCompound: true,
     restCompound: 120,
     restIsolation: 60,
+  },
+  conditioning: {
+    repsMin: 10,
+    repsMax: 20,
+    preferMetabolic: true,
+    allowCircuit: true,
+    allowSuperset: false,
+    restCompound: 30,
+    restIsolation: 20,
   },
   skill: {
     repsMin: 5,
@@ -227,15 +252,38 @@ function isAxialHeavy(ex) {
 function isMetabolic(ex) {
   const eq = ex.equipment || [];
   return (
+    ex.measurement === "time" ||
+    ex.category === "conditioning" ||
+    ex.category === "calisthenics" ||
     eq.includes("bodyweight") ||
     eq.includes("kettlebell") ||
+    eq.includes("battle_rope") ||
     eq.includes("cable") ||
     eq.includes("dumbbell") ||
-    /swing|carry|burpee|jump|crunch|plank|raise/i.test(ex.name || "")
+    /swing|carry|burpee|jump|crunch|plank|raise|crawl|climber|rope|bike|sled/i.test(ex.name || "")
   );
 }
 
-function scoreExercise(ex, { group, hit, log, goalCfg }) {
+function isCalisthenicsExercise(ex) {
+  const eq = ex.equipment || [];
+  return (
+    ex.category === "calisthenics" ||
+    eq.includes("bodyweight") ||
+    eq.includes("rings") ||
+    eq.includes("parallettes") ||
+    eq.includes("band")
+  );
+}
+
+const HIIT_SKILL_RE = /pull-up|chin-up|front lever|muscle-up|handstand|planche|pistol|nordic|archer|shrimp/i;
+
+function isHiitSuitable(ex, level = "beginner") {
+  if (!isMetabolic(ex) || isAxialHeavy(ex)) return false;
+  if (level !== "expert" && HIIT_SKILL_RE.test(String(ex.name || ""))) return false;
+  return true;
+}
+
+function scoreExercise(ex, { group, hit, log, goalCfg, splitType }) {
   const hist = previousPerformance(log, ex.name);
   let score = 0;
   if (hist) score += 20;
@@ -251,15 +299,29 @@ function scoreExercise(ex, { group, hit, log, goalCfg }) {
   if (goalCfg.preferSafe && isAxialHeavy(ex)) score -= 8;
   if (goalCfg.varietyBump && !hist) score += 4;
   if ((ex.equipment || []).includes("bodyweight")) score += 1;
+  if (splitType === "calisthenics") {
+    if (isCalisthenicsExercise(ex)) score += 20;
+    if (ex.category === "calisthenics") score += 8;
+  }
+  if (splitType === "hiit") {
+    if (isMetabolic(ex)) score += 16;
+    if (ex.measurement === "time" || ex.category === "conditioning") score += 10;
+  }
   return score;
 }
 
-function candidatesForGroup(group, { equipment, blockedSet, log, hit, goalCfg }) {
-  return exercisesSeed
+function candidatesForGroup(group, { equipment, blockedSet, log, hit, goalCfg, splitType, level }) {
+  const rows = exercisesSeed
     .filter((ex) => normalizeMuscleGroup(ex.muscleGroup) === group)
     .filter((ex) => !blockedSet.has(String(ex.name).toLowerCase()))
-    .filter((ex) => equipmentMatch(ex.equipment || [], equipment))
-    .map((ex) => ({ ex, score: scoreExercise(ex, { group, hit, log, goalCfg }) }))
+    .filter((ex) => equipmentMatch(ex.equipment || [], equipment));
+  const modeFiltered = rows.filter((ex) => {
+    if (splitType === "calisthenics") return isCalisthenicsExercise(ex);
+    if (splitType === "hiit") return isHiitSuitable(ex, level);
+    return true;
+  });
+  return (modeFiltered.length ? modeFiltered : rows)
+    .map((ex) => ({ ex, score: scoreExercise(ex, { group, hit, log, goalCfg, splitType }) }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.ex);
 }
@@ -288,6 +350,13 @@ function canSuperset(a, b, goalCfg) {
 
 function inferSessionRecipe(groups = [], splitType = "ppl") {
   const set = new Set(groups.map(normalizeMuscleGroup));
+  if (splitType === "hiit") return "hiit";
+  if (splitType === "calisthenics") {
+    const upperHits = ["chest", "back", "shoulders", "biceps", "triceps"].filter((g) => set.has(g)).length;
+    const lowerHits = ["quads", "hamstrings", "glutes", "calves", "lower_back"].filter((g) => set.has(g)).length;
+    if (upperHits && lowerHits) return "cali_full";
+    return lowerHits > upperHits ? "cali_lower" : "cali_upper";
+  }
   if (splitType === "ul") {
     const upperHits = ["chest", "back", "shoulders", "biceps", "triceps"].filter((g) => set.has(g)).length;
     const lowerHits = ["quads", "hamstrings", "glutes", "calves", "lower_back", "abs"].filter((g) =>
@@ -347,6 +416,7 @@ function setSeedForGoal(goal, goalCfg, level) {
   const mid = Math.round(((goalCfg.repsMin || 8) + (goalCfg.repsMax || 12)) / 2);
   let sets = level === "expert" ? 4 : 3;
   if (goal === "strength") sets = 4;
+  if (goal === "conditioning") sets = level === "expert" ? 5 : 4;
   if (goal === "rehab") sets = 3;
   if (goal === "lose_weight" || goal === "tone") sets = 3;
   return { sets, reps: mid, repsMin: goalCfg.repsMin, repsMax: goalCfg.repsMax };
@@ -473,8 +543,8 @@ export function generateWorkoutPlan({
     : "beginner";
   const goalCfg = applyWhyModifiers(GOAL_PRESETS[goal] || GOAL_PRESETS.build_muscle, trainWhy);
   const volume = resolveVolume(splitType, level, goalCfg, sessionMinutes);
-  const max = maxExercises || volume.max;
-  const min = Math.min(volume.min, max);
+  const max = maxExercises || (splitType === "hiit" ? Math.min(6, volume.max) : volume.max);
+  const min = splitType === "hiit" ? Math.min(5, max) : Math.min(volume.min, max);
   const seed = setSeedForGoal(goal, goalCfg, level);
   const bwKg = toKg(bodyWeight, preferredUnit);
   const unit = preferredUnit === "kg" ? "kg" : "lb";
@@ -485,12 +555,19 @@ export function generateWorkoutPlan({
   const hit = musclesHitRecently(log, 2);
   const usedNames = new Set();
   const picks = [];
-  const ctx = { equipment, blockedSet, log, hit, goalCfg };
+  const hiitMode = splitType === "hiit";
+  const ctx = { equipment, blockedSet, log, hit, goalCfg, splitType, level };
 
   const buildPick = (ex) => {
     const overload = suggestedNextLoad(log, ex.name, preferredUnit, goal, focusExercise);
     const compound = isCompound(ex);
-    const reps = repsBiasForBw(
+    const timed = hiitMode || ex.measurement === "time";
+    const duration = timed
+      ? Number(ex.defaultDuration) || (level === "expert" ? 45 : level === "intermediate" ? 40 : 30)
+      : undefined;
+    const reps = timed
+      ? 0
+      : repsBiasForBw(
       {
         ...seed,
         reps: Math.min(seed.repsMax || seed.reps, Math.max(seed.repsMin || seed.reps, overload.reps || seed.reps)),
@@ -502,16 +579,21 @@ export function generateWorkoutPlan({
       name: ex.name,
       muscleGroup: ex.muscleGroup,
       equipment: ex.equipment || [],
-      role: compound ? "compound" : "accessory",
-      sets: seed.sets,
+      category: ex.category,
+      measurement: timed ? "time" : ex.measurement,
+      duration,
+      role: hiitMode ? "interval" : compound ? "compound" : "accessory",
+      sets: hiitMode ? (level === "expert" ? 5 : 4) : seed.sets,
       reps,
-      weight: seedWeightForExercise(ex, {
-        bwKg,
-        level,
-        preferredUnit: unit,
-        overloadWeight: overload.weight,
-      }),
-      restSeconds: restForExercise(ex, goalCfg, goal, bwKg),
+      weight: timed
+        ? 0
+        : seedWeightForExercise(ex, {
+            bwKg,
+            level,
+            preferredUnit: unit,
+            overloadWeight: overload.weight,
+          }),
+      restSeconds: hiitMode ? (level === "expert" ? 20 : 25) : restForExercise(ex, goalCfg, goal, bwKg),
     };
   };
 
@@ -584,7 +666,7 @@ export function generateWorkoutPlan({
   }
 
   if (goalCfg.allowCircuit) {
-    const circuitPool = result.filter((p) => !p.pairId && isMetabolic(p)).slice(0, 4);
+    const circuitPool = result.filter((p) => !p.pairId && (hiitMode || isMetabolic(p))).slice(0, hiitMode ? 6 : 4);
     if (circuitPool.length >= 3) {
       const pairId = "circuit-1";
       circuitPool.forEach((p) => {

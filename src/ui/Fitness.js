@@ -24,6 +24,8 @@ import {
   sparklinePath,
   liveSessionElapsedMs,
   formatSessionClock,
+  formatDurationSeconds,
+  isTimedExercise,
   normalizeFocusExercise,
 } from "../fitness.js";
 import { isBodyweightExercise } from "../fitness-plan.js";
@@ -71,21 +73,27 @@ function setFieldValue(set, field) {
 
 function renderSetRow(set, exercise, sessionId, unit, { bodyweight = false } = {}) {
   const restSec = Number(exercise?.restSeconds) || Number(set?.restSeconds) || 90;
-  const loadFields = bodyweight
-    ? `<span class="text-xs shrink-0 font-semibold" style="color:var(--mute)">BW</span>
+  const timed = set?.duration != null || isTimedExercise(exercise);
+  const loadFields = timed
+    ? `${bodyweight ? `<span class="text-xs shrink-0 font-semibold" style="color:var(--mute)">BW</span>` : `<input class="input !min-h-11 !w-16 shrink-0 text-center" type="text" inputmode="decimal" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "weight"))}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
+      <span class="text-xs shrink-0" style="color:var(--mute)">${escapeHtml(set.unit || unit)}</span>`}
+      <input class="input !min-h-11 !w-16 shrink-0 text-center" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "duration"))}" placeholder="30" data-action="fitness-set-field" data-field="duration" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Interval seconds" />
+      <span class="text-xs shrink-0" style="color:var(--mute)">sec</span>`
+    : bodyweight
+      ? `<span class="text-xs shrink-0 font-semibold" style="color:var(--mute)">BW</span>
       <span class="text-xs shrink-0" style="color:var(--mute)">×</span>`
-    : `<input class="input !min-h-11 !w-16 shrink-0 text-center" type="text" inputmode="decimal" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "weight"))}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
+      : `<input class="input !min-h-11 !w-16 shrink-0 text-center" type="text" inputmode="decimal" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "weight"))}" placeholder="0" data-action="fitness-set-field" data-field="weight" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Weight" />
       <span class="text-xs shrink-0" style="color:var(--mute)">${escapeHtml(set.unit || unit)}</span>
       <span class="text-xs shrink-0" style="color:var(--mute)">×</span>`;
   return `
-    <div class="fitness-set-row flex items-center gap-2 ${set.done ? "is-done" : ""}">
+    <div class="fitness-set-row flex items-center gap-2 ${set.done ? "is-done" : ""} ${timed ? "is-timed" : ""}">
       <button type="button" class="check shrink-0 ${set.done ? "is-done" : ""}" data-action="toggle-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Mark set done">
         ${set.done ? icon("check", "h-4 w-4") : ""}
       </button>
       ${loadFields}
-      <input class="input !min-h-11 !w-14 shrink-0 text-center" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "reps"))}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />
+      ${timed ? "" : `<input class="input !min-h-11 !w-14 shrink-0 text-center" type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(setFieldValue(set, "reps"))}" placeholder="0" data-action="fitness-set-field" data-field="reps" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Reps" />`}
       <span class="fitness-set-row-actions ml-auto flex items-center gap-1 shrink-0">
-        <button type="button" class="icon-btn shrink-0" data-action="start-rest-timer" data-seconds="${restSec}" aria-label="Start ${restSec}s rest">${icon("refresh", "h-4 w-4")}</button>
+        <button type="button" class="icon-btn shrink-0" data-action="start-rest-timer" data-seconds="${timed ? Number(set.duration) || 30 : restSec}" aria-label="${timed ? `Start ${Number(set.duration) || 30}s interval` : `Start ${restSec}s rest`}">${icon("refresh", "h-4 w-4")}</button>
         <button type="button" class="icon-btn shrink-0" data-action="delete-fitness-set" data-session="${escapeHtml(sessionId)}" data-exercise="${escapeHtml(exercise.id)}" data-set="${escapeHtml(set.id)}" aria-label="Delete set">${icon("trash", "h-4 w-4")}</button>
       </span>
     </div>
@@ -184,6 +192,20 @@ function groupSessionExercises(exercises = []) {
   return groups;
 }
 
+function groupIsComplete(group) {
+  return (group.exercises || []).every((ex) => {
+    const sets = ex.sets || [];
+    return sets.length > 0 && sets.every((set) => set.done);
+  });
+}
+
+function orderSessionGroups(exercises = []) {
+  return groupSessionExercises(exercises)
+    .map((group, index) => ({ group, index, done: groupIsComplete(group) }))
+    .sort((a, b) => Number(a.done) - Number(b.done) || a.index - b.index)
+    .map((item) => item.group);
+}
+
 function renderExerciseCard(exercise, session, settings, log, { open = false, hidePairBadge = false, showGrip = false } = {}) {
   const unit = settings.preferredUnit || "lb";
   const catalog = findExerciseCatalog(exercise.name) || {};
@@ -191,12 +213,17 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
     name: exercise.name,
     equipment: catalog.equipment || exercise.equipment || [],
   });
+  const timed = exercise.measurement === "time" || isTimedExercise(exercise);
   const prev = previousPerformance(log, exercise.name);
   const prevLine = prev
-    ? bodyweight
-      ? `Last: ${prev.reps} reps`
-      : `Last: ${prev.weight} ${prev.unit} × ${prev.reps}`
-    : "No history yet. Set the baseline.";
+    ? timed
+      ? `Last: ${formatDurationSeconds(prev.duration || 0)}`
+      : bodyweight
+        ? `Last: ${prev.reps} reps`
+        : `Last: ${prev.weight} ${prev.unit} × ${prev.reps}`
+    : timed
+      ? "Interval work. Set the baseline."
+      : "No history yet. Set the baseline.";
   const goal = settings.goal || "build_muscle";
   const focus = normalizeFocusExercise(settings.focusExercise);
   const isFocus =
@@ -211,7 +238,11 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
     !hidePairBadge && exercise.pairId
       ? pairGroupLabel(exercise.pairType, exercise.pairId)
       : "";
-  const setLine = eachSide ? `Each side · ${totalSets} sets` : `${doneSets}/${totalSets} sets`;
+  const setLine = timed
+    ? `${doneSets}/${totalSets} intervals · ${formatDurationSeconds(sets[0]?.duration || catalog.defaultDuration || 30)}`
+    : eachSide
+      ? `Each side · ${totalSets} sets`
+      : `${doneSets}/${totalSets} sets`;
 
   return `
     <article class="panel fitness-exercise-card ${open ? "is-open" : "is-collapsed"}" data-exercise-card data-exercise-id="${escapeHtml(exercise.id)}" data-session-id="${escapeHtml(session.id)}" data-exercise-name="${escapeHtml(exercise.name)}" data-pair-id="${escapeHtml(exercise.pairId || "")}" data-pair-type="${escapeHtml(exercise.pairType || "")}">
@@ -223,7 +254,7 @@ function renderExerciseCard(exercise, session, settings, log, { open = false, hi
             ${pairLabel ? `<p class="text-xs font-semibold mb-1" style="color:var(--build)">${escapeHtml(pairLabel)}</p>` : ""}
             ${isFocus ? `<p class="text-xs font-semibold mb-1" style="color:var(--build)">Focus · Week ${focus.weekIndex}</p>` : ""}
             <h3 class="task-title !min-h-0">${escapeHtml(exercise.name)}</h3>
-            <p class="mt-1 help-text">${escapeHtml(muscleLabel(exercise.muscleGroup))}${bodyweight ? " · Bodyweight" : ""}${eachSide ? " · Each side" : ""}</p>
+            <p class="mt-1 help-text">${escapeHtml(muscleLabel(exercise.muscleGroup))}${timed ? " · Timed" : ""}${bodyweight ? " · Bodyweight" : ""}${eachSide ? " · Each side" : ""}</p>
             <p class="mt-1 text-xs font-semibold" style="color:var(--text-soft)">${escapeHtml(setLine)}</p>
           </span>
         </button>
@@ -415,7 +446,7 @@ function renderTodayPanel(state, ui) {
     <div class="fitness-exercise-list" data-fitness-list data-session="${escapeHtml(session.id)}">
     ${
       exercises.length
-        ? groupSessionExercises(exercises)
+        ? orderSessionGroups(exercises)
             .map((group) =>
               group.kind === "solo"
                 ? renderExerciseCard(group.exercises[0], session, settings, log, {
@@ -670,7 +701,8 @@ export function patchAddExerciseResults(root, ui, settings) {
   const muscle = ui.fitnessMuscle || "all";
   const listFilter = ui.fitnessListFilter || "all";
   const replacing = ui.replaceExercise;
-  const available = settings?.equipmentAvailable || EQUIPMENT_OPTIONS.map((e) => e.id);
+  const available =
+    ui.fitnessEquipmentFilter || settings?.equipmentAvailable || EQUIPMENT_OPTIONS.map((e) => e.id);
   const results = filterExercises(query, muscle, {
     equipment: available,
     blocked: settings?.blockedExercises || [],
@@ -679,7 +711,7 @@ export function patchAddExerciseResults(root, ui, settings) {
     listFilter,
   }).slice(0, 40);
   const pickAction = replacing ? "replace-pick-exercise" : "pick-exercise";
-  inner.innerHTML = renderAddExerciseResults(results, settings, sessionId, pickAction);
+  inner.innerHTML = renderAddExerciseResults(results, settings, sessionId, pickAction, query, listFilter);
   return true;
 }
 
@@ -696,29 +728,70 @@ export function patchSessionTimerClock(root, state) {
   return true;
 }
 
-function renderAddExerciseResults(results, settings, sessionId, pickAction) {
+function renderExercisePickRow(ex, settings, sessionId, pickAction) {
+  const fav = isFavorite(settings, ex.name);
+  const eq = (ex.equipment || []).join(" · ");
+  const timed = ex.measurement === "time";
+  const category = ex.category ? ` · ${ex.category === "calisthenics" ? "Calisthenics" : "Conditioning"}` : "";
+  return `
+    <div class="exercise-pick-row flex items-center gap-3">
+      <button type="button" class="min-w-0 flex-1 text-left flex items-center gap-4" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
+        ${renderMuscleThumb(ex.muscleGroup, "lg")}
+        <span class="min-w-0">
+          <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
+          <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}${timed ? ` · ${formatDurationSeconds(ex.defaultDuration || 30)}` : ""}${category}${eq ? ` · ${escapeHtml(eq)}` : ""}</p>
+        </span>
+      </button>
+      <button type="button" class="icon-btn shrink-0 ${fav ? "is-fav" : ""}" data-action="toggle-favorite-exercise" data-name="${escapeHtml(ex.name)}" aria-label="${fav ? "Unfavorite" : "Favorite"}" aria-pressed="${fav}">
+        ${icon("star", "h-4 w-4")}
+      </button>
+    </div>`;
+}
+
+function renderExerciseSection(title, items, settings, sessionId, pickAction) {
+  if (!items.length) return "";
+  return `
+    <section class="exercise-pick-section">
+      <p class="exercise-section-title">${escapeHtml(title)}</p>
+      <div class="space-y-2">${items.map((ex) => renderExercisePickRow(ex, settings, sessionId, pickAction)).join("")}</div>
+    </section>`;
+}
+
+function renderAddExerciseResults(results, settings, sessionId, pickAction, query = "", listFilter = "all") {
   if (!results.length) {
-    return `<p class="text-sm py-4 text-center" style="color:var(--mute)">No matches.</p>`;
+    const q = String(query || "").trim();
+    return q
+      ? `<section class="exercise-empty-card">
+          <p class="task-title !min-h-0">No match for “${escapeHtml(q)}”</p>
+          <p class="help-text mt-1">Add it once and it stays in your session.</p>
+          <button type="button" class="btn btn-primary w-full mt-3" data-action="add-search-custom-exercise" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(q)}">Add “${escapeHtml(q)}”</button>
+        </section>`
+      : `<p class="text-sm py-4 text-center" style="color:var(--mute)">No matches.</p>`;
   }
-  return results
-    .map((ex) => {
-      const fav = isFavorite(settings, ex.name);
-      const eq = (ex.equipment || []).join(" · ");
-      return `
-                <div class="exercise-pick-row flex items-center gap-3">
-                  <button type="button" class="min-w-0 flex-1 text-left flex items-center gap-4" data-action="${pickAction}" data-session="${escapeHtml(sessionId)}" data-name="${escapeHtml(ex.name)}" data-muscle="${escapeHtml(ex.muscleGroup)}">
-                    ${renderMuscleThumb(ex.muscleGroup, "lg")}
-                    <span class="min-w-0">
-                      <p class="task-title !min-h-0">${escapeHtml(ex.name)}</p>
-                      <p class="task-meta">${escapeHtml(muscleLabel(ex.muscleGroup))}${eq ? ` · ${escapeHtml(eq)}` : ""}</p>
-                    </span>
-                  </button>
-                  <button type="button" class="icon-btn shrink-0 ${fav ? "is-fav" : ""}" data-action="toggle-favorite-exercise" data-name="${escapeHtml(ex.name)}" aria-label="${fav ? "Unfavorite" : "Favorite"}" aria-pressed="${fav}">
-                    ${icon("star", "h-4 w-4")}
-                  </button>
-                </div>`;
-    })
-    .join("");
+  if (!query && listFilter === "all") {
+    const byName = new Map(results.map((ex) => [ex.name.toLowerCase(), ex]));
+    const used = new Set();
+    const takeNames = (names = [], limit = 5) =>
+      (names || [])
+        .map((name) => byName.get(String(name).toLowerCase()))
+        .filter(Boolean)
+        .filter((ex) => {
+          const key = ex.name.toLowerCase();
+          if (used.has(key)) return false;
+          used.add(key);
+          return true;
+        })
+        .slice(0, limit);
+    const recent = takeNames(settings?.recentExercises || [], 5);
+    const favorites = takeNames(settings?.favoriteExercises || [], 5);
+    const rest = results.filter((ex) => !used.has(ex.name.toLowerCase()));
+    return [
+      renderExerciseSection("Recent", recent, settings, sessionId, pickAction),
+      renderExerciseSection("Favorites", favorites, settings, sessionId, pickAction),
+      renderExerciseSection("All exercises", rest, settings, sessionId, pickAction),
+    ].join("");
+  }
+  return results.map((ex) => renderExercisePickRow(ex, settings, sessionId, pickAction)).join("");
 }
 
 export function renderAddExerciseModal(ui, settings) {
@@ -727,7 +800,8 @@ export function renderAddExerciseModal(ui, settings) {
   const muscle = ui.fitnessMuscle || "all";
   const listFilter = ui.fitnessListFilter || "all";
   const replacing = ui.replaceExercise;
-  const available = settings?.equipmentAvailable || EQUIPMENT_OPTIONS.map((e) => e.id);
+  const available =
+    ui.fitnessEquipmentFilter || settings?.equipmentAvailable || EQUIPMENT_OPTIONS.map((e) => e.id);
   const results = filterExercises(query, muscle, {
     equipment: available,
     blocked: settings?.blockedExercises || [],
@@ -739,10 +813,13 @@ export function renderAddExerciseModal(ui, settings) {
   const pickAction = replacing ? "replace-pick-exercise" : "pick-exercise";
 
   return `
-    <div class="modal-backdrop">
-      <div class="modal-sheet modal-scroll-body fitness-modal add-exercise-modal" role="dialog" aria-modal="true" aria-label="${title}" data-stop>
+    <div class="modal-backdrop modal-enter">
+      <div class="modal-sheet modal-scroll-body sheet-enter fitness-modal add-exercise-modal" role="dialog" aria-modal="true" aria-label="${title}" data-stop>
         <div class="flex items-center justify-between gap-3 shrink-0">
-          <h2 class="display text-3xl">${title}</h2>
+          <div class="min-w-0">
+            <h2 class="display text-3xl">${title}</h2>
+            ${replacing ? `<p class="help-text mt-1">Only this exercise changes. Your other logged work stays.</p>` : ""}
+          </div>
           <button type="button" class="btn !min-h-11 !px-3" data-action="close-modal">Cancel</button>
         </div>
         <form class="mt-4 shrink-0" data-action="search-exercise">
@@ -757,10 +834,10 @@ export function renderAddExerciseModal(ui, settings) {
             )
             .join("")}
         </div>
-        <div class="equipment-rail scroll-touch mt-4 shrink-0" role="group" aria-label="Equipment">
+        <div class="equipment-rail scroll-touch mt-4 shrink-0" role="group" aria-label="Equipment filter">
           ${EQUIPMENT_OPTIONS.map((opt) => {
             const on = available.includes(opt.id);
-            return `<button type="button" class="chip shrink-0 ${on ? "chip-build" : ""}" data-action="toggle-equipment" data-id="${opt.id}" aria-pressed="${on}">${escapeHtml(opt.label)}</button>`;
+            return `<button type="button" class="chip shrink-0 ${on ? "chip-build" : ""}" data-action="toggle-picker-equipment" data-id="${opt.id}" aria-pressed="${on}">${escapeHtml(opt.label)}</button>`;
           }).join("")}
         </div>
         <div class="muscle-rail scroll-touch mt-4 shrink-0" role="group" aria-label="Muscle">
@@ -773,7 +850,7 @@ export function renderAddExerciseModal(ui, settings) {
           ).join("")}
         </div>
         <div class="modal-scroll-inner scroll-touch mt-5 space-y-3" data-region="add-exercise-results">
-          ${renderAddExerciseResults(results, settings, sessionId, pickAction)}
+          ${renderAddExerciseResults(results, settings, sessionId, pickAction, query, listFilter)}
         </div>
         <form class="mt-4 space-y-3 border-t pt-4 shrink-0" style="border-color:var(--rail)" data-action="custom-exercise">
           <input type="hidden" name="sessionId" value="${escapeHtml(sessionId)}" />
@@ -833,6 +910,9 @@ export function renderWorkoutDetailModal(state, ui) {
               <ul class="mt-1.5 space-y-0.5 text-xs" style="color:var(--mute)">
                 ${(ex.sets || [])
                   .map((set) => {
+                    if (set.duration != null) {
+                      return `<li>${set.done ? "✓ " : ""}${formatDurationSeconds(set.duration)}${Number(set.weight) > 0 ? ` · ${Number(set.weight)} ${escapeHtml(set.unit || unit)}` : ""}</li>`;
+                    }
                     const bw = isBodyweightExercise({
                       name: ex.name,
                       equipment: findExerciseCatalog(ex.name)?.equipment || [],

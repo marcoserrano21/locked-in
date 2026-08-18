@@ -1,6 +1,13 @@
 import { escapeHtml, primaryBtn, icon } from "./dom.js";
 import { copy } from "../copy/voice.js";
 import { DAY_NAMES } from "../schedule.js";
+import {
+  EQUIPMENT_OPTIONS,
+  EXPERIENCE_LEVELS,
+  FITNESS_GOALS,
+  WHY_YOU_TRAIN,
+  defaultFitnessSettings,
+} from "../fitness.js";
 
 const BUILD_DEFAULT = [0, 1, 2];
 export const WELCOME_NAME_MAX = 24;
@@ -47,6 +54,18 @@ export function renderWelcomeModal(ui, state) {
   const length = Number(state?.settings?.challengeLength || ui.welcomeChallengeLength || 30);
   const premium = Boolean(state?.settings?.premiumUnlocked);
   const openTip = ui.setupTipId || null;
+  const hasCoach = focus === "fitness" || focus === "both";
+  const appModeStep = hasCoach ? 5 : 4;
+  const finalStep = hasCoach ? 6 : 5;
+  const coachGoal = ui.welcomeFitnessGoal || null;
+  const coachStyle = ui.welcomeFitnessStyle || null;
+  const coachLevel = ui.welcomeFitnessLevel || null;
+  const coachWhy = ui.welcomeTrainWhy || [];
+  const coachEquipment = Array.isArray(ui.welcomeEquipment)
+    ? ui.welcomeEquipment
+    : defaultFitnessSettings().equipmentAvailable;
+  const coachOk =
+    Boolean(coachGoal) && Boolean(coachStyle) && Boolean(coachLevel) && coachWhy.length > 0 && coachEquipment.length > 0;
   const nameOk = name.trim().length > 0 && name.trim().length <= WELCOME_NAME_MAX;
   const focusOk = Boolean(focus);
   const buildDaysOk = buildDays.length > 0;
@@ -145,18 +164,88 @@ export function renderWelcomeModal(ui, state) {
           </div>
           <div class="flex gap-2 mt-5">
             <button type="button" class="btn flex-1" data-action="welcome-back" data-step="2">Back</button>
-            ${primaryBtn("Continue", { disabled: !buildDaysOk || !blockPresetOk, className: "flex-1", attrs: 'data-action="welcome-next" data-step="4"' })}
+            ${primaryBtn("Continue", { disabled: !buildDaysOk || !blockPresetOk, className: "flex-1", attrs: `data-action="welcome-next" data-step="${hasCoach ? 4 : appModeStep}"` })}
           </div>
         </div>
       </div>
     `;
   }
 
-  if (step === 4) {
+  if (step === 4 && hasCoach) {
+    return `
+      <div class="modal-backdrop modal-enter" data-stop>
+        <div class="modal-sheet modal-scroll-body sheet-enter" role="dialog" aria-modal="true" aria-label="Coach setup">
+          <p class="eyebrow shrink-0">Setup · 4 of ${finalStep}</p>
+          <h2 class="display text-4xl mt-1 shrink-0">Coach your first plan</h2>
+          <p class="mt-2 help-text shrink-0">Modern hybrid setup. Pick a direction now; every path stays available later.</p>
+          <div class="modal-scroll-inner scroll-touch mt-5 space-y-6">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Main outcome</p>
+              <div class="prefs-grid" role="group" aria-label="Main outcome">
+                ${FITNESS_GOALS.map(
+                  (goal) => `<button type="button" class="prefs-tile ${coachGoal === goal.id ? "is-selected" : ""}" data-action="welcome-fitness-goal" data-goal="${goal.id}" aria-pressed="${coachGoal === goal.id}">${escapeHtml(goal.label)}</button>`
+                ).join("")}
+              </div>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Training style</p>
+              <div class="segment flex-wrap" role="group" aria-label="Training style">
+                ${[
+                  ["ppl", "PPL"],
+                  ["ul", "Upper / Lower"],
+                  ["calisthenics", "Calisthenics"],
+                  ["hiit", "HIIT"],
+                ]
+                  .map(
+                    ([id, label]) => `<button type="button" class="segment-btn ${coachStyle === id ? "is-active accent" : ""}" data-action="welcome-fitness-style" data-style="${id}" aria-pressed="${coachStyle === id}">${label}</button>`
+                  )
+                  .join("")}
+              </div>
+              <p class="mt-2 help-text">Strength, bodyweight, and conditioning can all coexist. This only changes the first recommendation.</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Equipment</p>
+              <div class="flex flex-wrap gap-1.5" role="group" aria-label="Available equipment">
+                ${EQUIPMENT_OPTIONS.map((opt) => {
+                  const on = coachEquipment.includes(opt.id);
+                  return `<button type="button" class="chip ${on ? "chip-build" : ""}" data-action="welcome-fitness-equipment" data-id="${opt.id}" aria-pressed="${on}">${escapeHtml(opt.label)}</button>`;
+                }).join("")}
+              </div>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Experience</p>
+              <div class="segment" role="group" aria-label="Experience">
+                ${EXPERIENCE_LEVELS.map(
+                  (level) => `<button type="button" class="segment-btn ${coachLevel === level.id ? "is-active accent" : ""}" data-action="welcome-fitness-level" data-level="${level.id}" aria-pressed="${coachLevel === level.id}">${escapeHtml(level.label)}</button>`
+                ).join("")}
+              </div>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--mute)">Why now?</p>
+              <div class="prefs-grid" role="group" aria-label="Why now">
+                ${WHY_YOU_TRAIN.map((why) => {
+                  const on = coachWhy.includes(why.id);
+                  const locked = !on && coachWhy.length >= 3;
+                  return `<button type="button" class="prefs-tile ${on ? "is-selected" : ""} ${locked ? "is-disabled" : ""}" data-action="welcome-train-why" data-why="${why.id}" aria-pressed="${on}" ${locked ? "disabled" : ""}>${escapeHtml(why.label)}</button>`;
+                }).join("")}
+              </div>
+              <p class="mt-2 help-text">Pick up to 3. This tunes density, rest, and recommendations.</p>
+            </div>
+          </div>
+          <div class="flex gap-2 pt-4 shrink-0 border-t mt-4" style="border-color:var(--rail)">
+            <button type="button" class="btn flex-1" data-action="welcome-back" data-step="3">Back</button>
+            ${primaryBtn("Continue", { disabled: !coachOk, className: "flex-1", attrs: `data-action="welcome-next" data-step="${appModeStep}"` })}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (step === appModeStep) {
     return `
       <div class="modal-backdrop modal-enter" data-stop>
         <div class="modal-sheet sheet-enter" role="dialog" aria-modal="true" aria-label="Choose app mode">
-          <p class="eyebrow">Setup · 4 of 5</p>
+          <p class="eyebrow">Setup · ${appModeStep} of ${finalStep}</p>
           <h2 class="display text-4xl mt-1">${copy.welcome.step4Title}</h2>
           <p class="mt-2 help-text">${copy.welcome.step4Subtitle}</p>
           <form class="mt-5 space-y-3" data-action="welcome-mode">
@@ -179,7 +268,7 @@ export function renderWelcomeModal(ui, state) {
                 .join("")}
             </div>
             <div class="flex gap-2 pt-1">
-              <button type="button" class="btn flex-1" data-action="welcome-back" data-step="3">Back</button>
+              <button type="button" class="btn flex-1" data-action="welcome-back" data-step="${hasCoach ? 4 : 3}">Back</button>
               ${primaryBtn("Continue", { disabled: !appModeOk, type: "submit", className: "flex-1" })}
             </div>
           </form>
@@ -191,7 +280,7 @@ export function renderWelcomeModal(ui, state) {
   return `
     <div class="modal-backdrop modal-enter" data-stop>
       <div class="modal-sheet sheet-enter" role="dialog" aria-modal="true" aria-label="Lock in">
-        <p class="eyebrow">Setup · 5 of 5</p>
+        <p class="eyebrow">Setup · ${finalStep} of ${finalStep}</p>
         <h2 class="display text-4xl mt-1">${copy.welcome.step5Title}</h2>
         <p class="mt-2 help-text">${copy.welcome.step5Subtitle}</p>
         <div class="mt-4">
@@ -220,7 +309,7 @@ export function renderWelcomeModal(ui, state) {
           }
         </div>
         <div class="flex gap-2 mt-5">
-          <button type="button" class="btn flex-1" data-action="welcome-back" data-step="4">Back</button>
+          <button type="button" class="btn flex-1" data-action="welcome-back" data-step="${appModeStep}">Back</button>
           ${primaryBtn("Start my track", { disabled: !lengthOk, className: "flex-1", attrs: 'data-action="welcome-finish"' })}
         </div>
       </div>
