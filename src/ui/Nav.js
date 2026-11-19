@@ -13,8 +13,9 @@ export function visibleTabs(state) {
   const unlocked = s.modulesUnlocked || {};
   const isMarco = state?.preset === "marco";
   const moneyLabel = isMarco ? "Miles" : "Money";
-  const focus = s.welcomeFocus;
-  const freelanceLabel = focus === "schedule" ? "Hustle" : "Train";
+  // One label for everyone. The screen holds both Fitness and Hustle behind a
+  // toggle, so a focus-dependent label sent schedule users to a workout log.
+  const freelanceLabel = "Train";
   return TABS.filter((t) => {
     if (t.id === "proof") return Boolean(unlocked.proof);
     if (t.id === "miles") return Boolean(unlocked.miles);

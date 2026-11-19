@@ -1,5 +1,5 @@
 import playbookSeed from "../../content/freelance.playbook.json";
-import { mergePlaybook } from "../hustle-playbook.js";
+import { mergePlaybookFor } from "../hustle-playbook.js";
 import { formatDisplayDate, todayKey } from "../dates.js";
 import { escapeHtml, icon } from "./dom.js";
 import { renderDateField } from "./DatePicker.js";
@@ -54,7 +54,19 @@ function progressRail(done, total, label) {
 }
 
 function renderHustlePanel(state, ui) {
-  const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+  const playbook = mergePlaybookFor(state);
+  // No niche yet means a blank playbook (guests start empty). Don't render
+  // the stats and panels around nothing — point at the editor instead.
+  if (!playbook.niche?.trim()) {
+    return `
+    <section class="panel space-y-3">
+      <p class="eyebrow">Command center</p>
+      <p class="text-sm font-semibold">Set your niche to start the Hustle loop</p>
+      <p class="text-sm" style="color:var(--mute)">Pick a niche, then add your weekly flow, ramp, and scripts. Nothing here is pre-filled.</p>
+      <button type="button" class="btn btn-primary w-full" data-action="open-hustle-editor">Set your niche</button>
+    </section>
+  `;
+  }
   const log = state.outreachLog || [];
   const checks = state.hustleChecks || {};
   const tab = ui.hustleTab || "flow";
@@ -231,30 +243,21 @@ export function renderFreelance(state, ui) {
   const focus = state.settings?.welcomeFocus;
   const fallbackView = focus === "schedule" ? "hustle" : "fitness";
   const view = ui.hustleView || fallbackView;
-  const premium = Boolean(state.settings?.premiumUnlocked);
-  const title = !premium || view === "fitness" ? "Growth" : "Command center";
-  const subtitle = !premium || view === "fitness" ? "Fitness tracker" : "Hustle";
+  const title = view === "fitness" ? "Growth" : "Command center";
+  const subtitle = view === "fitness" ? "Fitness tracker" : "Hustle";
 
-  const viewToggle = premium
-    ? `
+  // Both views are always reachable. The Hustle panel used to hide behind a
+  // premium flag, so schedule-focus users tapped "Hustle" and got a workout log.
+  const viewToggle = `
     <div class="segment mb-3" role="tablist" aria-label="Growth views">
       ${VIEW_TABS.map(
         (t) =>
           `<button type="button" class="segment-btn ${view === t.id ? "is-active accent" : ""}" data-action="hustle-view" data-view="${t.id}" role="tab" aria-selected="${view === t.id}">${t.label}</button>`
       ).join("")}
     </div>
-  `
-    : "";
+  `;
 
-  const activeView = premium ? view : "fitness";
-  const body =
-    activeView === "fitness"
-      ? `${renderFitness(state, ui)}${
-          premium
-            ? ""
-            : `<p class="mt-3 text-center help-text"><button type="button" class="underline" data-action="set-tab" data-tab="profile">Enable command center (beta) in Profile</button></p>`
-        }`
-      : renderHustlePanel(state, ui);
+  const body = view === "fitness" ? renderFitness(state, ui) : renderHustlePanel(state, ui);
 
   return `
     <section class="screen">
