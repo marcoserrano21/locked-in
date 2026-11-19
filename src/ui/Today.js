@@ -19,7 +19,7 @@ import { formatTimeShort } from "./plan/ScheduleTimeline.js";
 import { renderPlan } from "./Plan.js";
 import { renderFlash, renderInstallTip } from "./Install.js";
 import { coachHints } from "../coach.js";
-import { mergePlaybook } from "../hustle-playbook.js";
+import { mergePlaybookFor } from "../hustle-playbook.js";
 import { isBackupStale, daysSinceBackup, BACKUP_STALE_DAYS } from "../backup.js";
 import { copy } from "../copy/voice.js";
 import { renderDateField } from "./DatePicker.js";
@@ -76,7 +76,7 @@ function editToggleBtn(todayMode) {
 const STATUS_DUPLICATE_HINTS = new Set(["empty-wizard", "streak-risk"]);
 
 function renderCoachStrip(state, focusBlock) {
-  const playbook = mergePlaybook(state.settings?.hustlePlaybook) || playbookSeed;
+  const playbook = mergePlaybookFor(state) || playbookSeed;
   const hints = coachHints(state, { playbook, focusBlock });
   const h = hints.find((hint) => !STATUS_DUPLICATE_HINTS.has(hint.id));
   if (!h) return "";
@@ -223,7 +223,7 @@ function renderTomorrowFooter(state, selectedDate) {
 }
 
 function coachHasEditHint(state) {
-  const playbook = mergePlaybook(state.settings?.hustlePlaybook) || playbookSeed;
+  const playbook = mergePlaybookFor(state) || playbookSeed;
   return coachHints(state, { playbook }).some((h) => h.action === "open-edit");
 }
 

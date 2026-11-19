@@ -295,7 +295,7 @@ export function renderWelcomeModal(ui, state) {
             ${
               premium
                 ? `<button type="button" class="segment-btn ${length === 90 ? "is-active accent" : ""}" data-action="welcome-challenge-length" data-days="90">90 Days</button>`
-                : `<button type="button" class="segment-btn challenge-length-locked" data-action="open-premium-unlock" title="${escapeHtml(copy.challenge.locked90)}">90 Days · Beta</button>`
+                : `<button type="button" class="segment-btn challenge-length-locked" data-action="welcome-challenge-length" data-days="90" title="${escapeHtml(copy.challenge.locked90)}">90 Days · Beta</button>`
             }
           </div>
           ${

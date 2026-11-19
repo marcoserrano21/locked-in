@@ -1,7 +1,7 @@
 import { parseTimeToMinutes, todayKey } from "./dates.js";
 import { resolveBlocksForDate } from "./work.js";
 import { streakAtRisk } from "./streaks.js";
-import { mergePlaybook } from "./hustle-playbook.js";
+import { mergePlaybookFor } from "./hustle-playbook.js";
 
 let timerId = null;
 let scheduledKey = null;
@@ -123,7 +123,7 @@ function scheduleMondayFlow(state) {
   const key = todayKey();
   if (mondayFiredKey === key) return;
 
-  const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+  const playbook = mergePlaybookFor(state);
   const flowIncomplete = (playbook.weeklyFlow || []).some((f) => !state.hustleChecks?.[f.id]);
   if (!flowIncomplete) return;
 
@@ -144,7 +144,7 @@ function scheduleMondayFlow(state) {
   if (delay < 0 || delay > 16 * 60 * 60 * 1000) return;
   mondayTimerId = setTimeout(() => {
     mondayTimerId = null;
-    const stillOpen = (mergePlaybook(state.settings?.hustlePlaybook).weeklyFlow || []).some(
+    const stillOpen = (mergePlaybookFor(state).weeklyFlow || []).some(
       (f) => !state.hustleChecks?.[f.id]
     );
     if (stillOpen) fire();
