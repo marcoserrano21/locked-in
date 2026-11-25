@@ -1,5 +1,5 @@
 import { escapeHtml } from "./dom.js";
-import { mergePlaybook } from "../hustle-playbook.js";
+import { mergePlaybookFor } from "../hustle-playbook.js";
 import { uid } from "../schedule.js";
 
 const SCRIPT_KEYS = [
@@ -10,7 +10,7 @@ const SCRIPT_KEYS = [
 ];
 
 export function renderHustleEditorModal(state, ui) {
-  const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+  const playbook = mergePlaybookFor(state);
   const tab = ui.hustleEditorTab || "brief";
   const tabs = [
     { id: "brief", label: "Brief" },

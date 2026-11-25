@@ -234,7 +234,7 @@ export function renderProfile(state, ui = {}, profiles = []) {
             ${
               premium
                 ? `<button type="button" class="segment-btn ${lengthChoice === 90 ? "is-active accent" : ""}" data-action="set-challenge-length" data-days="90">90 Days</button>`
-                : `<button type="button" class="segment-btn challenge-length-locked" data-action="open-premium-unlock" title="${escapeHtml(copy.challenge.locked90)}">90 Days · Beta</button>`
+                : `<button type="button" class="segment-btn challenge-length-locked" data-action="set-challenge-length" data-days="90" title="${escapeHtml(copy.challenge.locked90)}">90 Days · Beta</button>`
             }
           </div>
           ${
@@ -294,10 +294,10 @@ export function renderProfile(state, ui = {}, profiles = []) {
         <div class="mt-3 space-y-3">
         <label class="flex min-h-tap flex-col gap-2 text-sm">
           <span class="flex items-center justify-between gap-3">
-            <span id="premium-beta-label">Enable command center (beta)</span>
+            <span id="premium-beta-label">Enable beta preview</span>
             <input type="checkbox" data-action="toggle-premium-beta" ${s.premiumUnlocked ? "checked" : ""} class="h-4 w-4" style="accent-color:var(--build)" aria-labelledby="premium-beta-label" aria-describedby="premium-beta-help" />
           </span>
-          <span id="premium-beta-help" class="help-text">Beta preview. Not a purchase. Founder password remains a shortcut.</span>
+          <span id="premium-beta-help" class="help-text">Beta preview. Not a purchase. Unlocks 90-day and custom challenge lengths.</span>
         </label>
         ${
           !activeGuestId

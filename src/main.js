@@ -93,7 +93,7 @@ import {
   resolveFocusFromPlan,
 } from "./fitness.js";
 import { generateWorkoutPlan } from "./fitness-plan.js";
-import { mergePlaybook } from "./hustle-playbook.js";
+import { mergePlaybookFor } from "./hustle-playbook.js";
 import { completionForDate } from "./streaks.js";
 import { applyTheme, applyTextSize, cycleTheme, getStoredTheme } from "./theme.js";
 import { enableBlockReminders, scheduleNextBlockReminder } from "./reminders.js";
@@ -134,7 +134,7 @@ import {
 import { renderCommitModal } from "./ui/Commit.js";
 import { renderCelebrate } from "./ui/Celebrate.js";
 import { renderToast } from "./ui/Install.js";
-import { renderPremiumUnlockModal, PREMIUM_TEST_PASSWORD } from "./ui/PremiumUnlock.js";
+
 import { renderHustleEditorModal, makeFlowItem, makeRampWeek } from "./ui/HustleEditor.js";
 import { computeStreak } from "./streaks.js";
 import { listBetaGuestLinks } from "./beta.js";
@@ -343,7 +343,7 @@ function render() {
     modal = renderFitnessPrefsModal(ui, state);
   else if (ui.modal === "workout-builder") modal = renderWorkoutBuilderModal(ui, state);
   else if (ui.modal === "workout-detail") modal = renderWorkoutDetailModal(state, ui);
-  else if (ui.modal === "premium-unlock") modal = renderPremiumUnlockModal(ui);
+
   else if (ui.modal === "hustle-editor") modal = renderHustleEditorModal(state, ui);
   else if (ui.modal === "shift-sheet") modal = renderShiftSheet(ui, state);
 
@@ -625,7 +625,7 @@ function clearModalState() {
     replaceExercise: null,
     openExerciseMenu: null,
     openBlockMenuIndex: null,
-    premiumError: null,
+
     tipsTrack: null,
     rebuildSessionId: null,
     selectedMuscleGroups: ui.modal === "workout-builder" ? [] : ui.selectedMuscleGroups,
@@ -1350,11 +1350,6 @@ app.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "open-premium-unlock") {
-    setUi({ modal: "premium-unlock", premiumError: null });
-    return;
-  }
-
   if (action === "open-hustle-editor") {
     setUi({ modal: "hustle-editor", hustleEditorTab: "brief" });
     return;
@@ -1366,7 +1361,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "hustle-flow-delete") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const weeklyFlow = [...(playbook.weeklyFlow || [])];
     weeklyFlow.splice(Number(t.dataset.index), 1);
     updateHustlePlaybook({ weeklyFlow });
@@ -1374,7 +1369,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "hustle-flow-move") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const weeklyFlow = [...(playbook.weeklyFlow || [])];
     const i = Number(t.dataset.index);
     const j = i + Number(t.dataset.dir);
@@ -1385,7 +1380,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "hustle-ramp-delete") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const ramp = [...(playbook.ramp || [])];
     ramp.splice(Number(t.dataset.index), 1);
     updateHustlePlaybook({ ramp });
@@ -1592,8 +1587,7 @@ app.addEventListener("click", (event) => {
   if (action === "welcome-challenge-length") {
     const days = Number(t.dataset.days);
     if (days === 90 && !state.settings?.premiumUnlocked) {
-      setUi({ modal: "premium-unlock", premiumError: null });
-      showToast("90-day lock-in is a beta preview");
+      showToast("90-day challenges need beta preview. Turn it on under Profile, Beta.");
       return;
     }
     if (!setChallengeLength(days)) {
@@ -1702,14 +1696,14 @@ app.addEventListener("click", (event) => {
 
   if (action === "disable-premium-preview") {
     setPremiumUnlocked(false);
-    showToast("Command center beta off");
+    showToast("Beta preview off");
     return;
   }
 
   if (action === "toggle-premium-beta") {
     const on = Boolean(t.checked);
     setPremiumUnlocked(on);
-    showToast(on ? "Command center beta on" : "Command center beta off");
+    showToast(on ? "Beta preview on" : "Beta preview off");
     return;
   }
 
@@ -2075,8 +2069,7 @@ app.addEventListener("click", (event) => {
   if (action === "set-challenge-length") {
     const days = Number(t.dataset.days);
     if (days === 90 && !state.settings?.premiumUnlocked) {
-      setUi({ modal: "premium-unlock", premiumError: null });
-      showToast("90-day lock-in is a beta preview");
+      showToast("90-day challenges need beta preview. Turn it on under Profile, Beta.");
       return;
     }
     const ok = setChallengeLength(days);
@@ -2089,7 +2082,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (action === "copy-script") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const text = playbook.scripts?.[t.dataset.script] || "";
     if (!text) return;
     navigator.clipboard
@@ -2397,7 +2390,7 @@ app.addEventListener("change", async (event) => {
   }
   if (input?.dataset?.action === "toggle-premium-beta") {
     setPremiumUnlocked(Boolean(input.checked));
-    showToast(input.checked ? "Command center beta on" : "Command center beta off");
+    showToast(input.checked ? "Beta preview on" : "Beta preview off");
     return;
   }
   if (input?.dataset?.action === "setup-toggle-module") {
@@ -3015,7 +3008,7 @@ app.addEventListener("submit", (event) => {
 
   if (form.dataset.action === "set-custom-challenge-length" || form.dataset.action === "welcome-custom-challenge") {
     if (!state.settings?.premiumUnlocked) {
-      setUi({ modal: "premium-unlock", premiumError: null });
+      showToast("Custom lengths need beta preview. Turn it on under Profile, Beta.");
       return;
     }
     const days = Number(form.days?.value);
@@ -3084,18 +3077,6 @@ app.addEventListener("submit", (event) => {
     return;
   }
 
-  if (form.dataset.action === "unlock-premium") {
-    const password = form.password.value;
-    if (password === PREMIUM_TEST_PASSWORD) {
-      setPremiumUnlocked(true);
-      clearModalState();
-      showToast("Command center beta on");
-    } else {
-      setUi({ premiumError: "Wrong password. Try again." });
-    }
-    return;
-  }
-
   if (form.dataset.action === "save-hustle-brief") {
     updateHustlePlaybook({
       niche: form.niche.value.trim(),
@@ -3111,7 +3092,7 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "hustle-flow-add") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const item = makeFlowItem(form.label.value, form.detail.value);
     if (!item.label) return;
     updateHustlePlaybook({ weeklyFlow: [...(playbook.weeklyFlow || []), item] });
@@ -3121,7 +3102,7 @@ app.addEventListener("submit", (event) => {
   }
 
   if (form.dataset.action === "hustle-ramp-add") {
-    const playbook = mergePlaybook(state.settings?.hustlePlaybook);
+    const playbook = mergePlaybookFor(state);
     const items = String(form.items.value || "")
       .split("\n")
       .map((x) => x.trim())
